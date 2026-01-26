@@ -6,3 +6,4 @@
 # Added by Homey CLI
 /.homeybuild/
 /build
+AGENTS.md

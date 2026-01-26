@@ -121,12 +121,12 @@
       {
         "id": "then_more_dim",
         "title": {
-          "en": "Timer dim",
-          "nl": "Timer dim"
+          "en": "Dim for a while",
+          "nl": "Dim for a while"
         },
         "titleFormatted": {
-          "en": "Dim-Timer for [[device]] with brightness [[brightness_level]] for [[time_on]] seconds, [[ignore_when_on]], [[overrule_longer_timeouts]], restore: [[restore]]",
-          "nl": "Dim-Timer voor [[device]] met brightness [[brightness_level]] voor [[time_on]] seconden, [[ignore_when_on]], [[overrule_longer_timeouts]], herstel: [[restore]]"
+          "en": "Set [[device]] to [[brightness_level]] for [[time_on]]s (ignore if on: [[ignore_when_on]], override: [[overrule_longer_timeouts]], restore: [[restore]])",
+          "nl": "Zet [[device]] op [[brightness_level]] voor [[time_on]]s (negeer indien aan: [[ignore_when_on]], overschrijf: [[overrule_longer_timeouts]], herstel: [[restore]])"
         },
         "hint": {
           "en": "With this action you can keep your dimable device enabled for some time",

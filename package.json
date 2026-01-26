@@ -4,21 +4,21 @@
   "description": "Homey Timer addon",
   "main": "app.ts",
   "dependencies": {
-    "homey-api": "^1.10.20"
+    "homey-api": "^3.16.0"
   },
   "devDependencies": {
-    "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.7",
-    "@types/node": "^22.7.3",
-    "@types/node-fetch": "^2.6.11",
+    "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.12",
+    "@types/node": "^25.0.10",
+    "@types/node-fetch": "^2.6.13",
     "@types/source-map-support": "^0.5.10",
-    "@types/ws": "^8.5.12",
-    "@typescript-eslint/eslint-plugin": "^8.7.0",
-    "@typescript-eslint/parser": "^8.7.0",
-    "eslint": "^9.11.1",
-    "homey": "^3.7.4",
-    "athom-api": "^3.8.3",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
+    "eslint": "^9.39.2",
+    "homey": "^3.12.2",
+    "athom-api": "^3.9.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.2"
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "lint": "eslint . --ext .ts",

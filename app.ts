@@ -1,9 +1,9 @@
-import { HomeyAPI } from "athom-api";
+import { HomeyAPI as AthomHomeyAPI } from "athom-api";
 
 import Homey = require("homey");
-const { HomeyAPIApp } = require("homey-api");
+const { HomeyAPI } = require("homey-api");
 
-import Device = HomeyAPI.ManagerDevices.Device;
+import Device = AthomHomeyAPI.ManagerDevices.Device;
 
 const DEBUG = process.env.DEBUG === "1";
 
@@ -31,7 +31,7 @@ interface StoredTimer {
 
 export default class TimerApp extends Homey.App {
   private timers: { [deviceId: string]: Timer } = {};
-  private api: typeof HomeyAPIApp | null = null;
+  private api: any | null = null;
   private cloudUrl: string = "";
 
   // Keep track of devices currently setting a timer
@@ -82,10 +82,11 @@ export default class TimerApp extends Homey.App {
     const thenMoreOnOff = this.homey.flow.getActionCard("then_more_on_off");
     thenMoreOnOff
       .registerRunListener(async (args: any) => {
+        const timeOnSeconds = this.getTimeOnSeconds(args);
         return this.runScript(
           args.device,
           { capability: "onoff", value: true },
-          args.time_on,
+          timeOnSeconds,
           args.ignore_when_on,
           args.overrule_longer_timeouts
         );
@@ -96,10 +97,11 @@ export default class TimerApp extends Homey.App {
     const thenMoreDim = this.homey.flow.getActionCard("then_more_dim");
     thenMoreDim
       .registerRunListener(async (args: any) => {
+        const timeOnSeconds = this.getTimeOnSeconds(args);
         return this.runScript(
           args.device,
           { capability: "dim", value: args.brightness_level },
-          args.time_on,
+          timeOnSeconds,
           args.ignore_when_on,
           args.overrule_longer_timeouts,
           args.restore
@@ -170,7 +172,14 @@ export default class TimerApp extends Homey.App {
     const now = Date.now();
 
     for (const storedTimer of storedTimers) {
-      const device = await this.getApi().devices.getDevice({ id: storedTimer.deviceId });
+      let device: Device | null = null;
+      try {
+        const api = await this.getApi();
+        device = await api.devices.getDevice({ id: storedTimer.deviceId });
+      } catch (error) {
+        this.log(`Error restoring timer for device ${storedTimer.deviceId}: ${error}`);
+        continue;
+      }
       if (!device) {
         this.log(`Device with ID ${storedTimer.deviceId} not found. Skipping timer restoration.`);
         continue;
@@ -214,6 +223,11 @@ export default class TimerApp extends Homey.App {
       }, remainingTime);
 
       // Re-establish the capability listener
+      if (!device.capabilitiesObj || !(storedTimer.capability in device.capabilitiesObj)) {
+        this.log(`Device ${device.name} [${device.id}] no longer supports capability ${storedTimer.capability}. Skipping timer restoration.`);
+        continue;
+      }
+
       const capabilityInstance = device.makeCapabilityInstance(storedTimer.capability, (value: any) => {
         if (!value || (storedTimer.capability === "dim" && value === 0)) {
           this.log(`Listener: Device ${device.name} [${device.id}] turned off or dimmed to zero, disabling timer`);
@@ -262,7 +276,9 @@ export default class TimerApp extends Homey.App {
     }
 
     // Cleanup the timer, which destroys the capability listener and removes the timer reference
-    this.cleanupTimer(device);
+    if (this.timers[device.id]) {
+      this.cleanupTimer(device);
+    }
   }
 
   /**
@@ -296,20 +312,28 @@ export default class TimerApp extends Homey.App {
     try {
       const api = await this.getApi();
       const apiDevice = await api.devices.getDevice({ id: device.id });
-      const deviceCapability = apiDevice.capabilitiesObj[action.capability];
+      const deviceCapability = apiDevice.capabilitiesObj ? apiDevice.capabilitiesObj[action.capability] : null;
+      if (!deviceCapability) {
+        this.log(`Device ${device.name} [${device.id}] does not support capability ${action.capability}.`);
+        return true;
+      }
       const timer = this.timers[device.id];
 
       let oldValue: number | null = null;
       let capabilityInstance = null;
+      const isDimCapability = action.capability === "dim";
+      const hasOnOff = apiDevice.capabilitiesObj && apiDevice.capabilitiesObj.onoff;
+      const isCurrentlyOff = hasOnOff
+        ? apiDevice.capabilitiesObj.onoff.value === false
+        : (isDimCapability ? deviceCapability.value === 0 : deviceCapability.value === false);
 
       if (
-        deviceCapability.value === false ||
+        isCurrentlyOff ||
         ignoreWhenOn === "no" ||
         (timer && (overruleLongerTimeouts === "yes" || Date.now() + timeOn * 1000 > timer.offTime))
       ) {
         if (timer) {
-          oldValue = timer.oldValue;
-          capabilityInstance = timer.onOffCapabilityInstance;
+          oldValue = restore === "yes" ? timer.oldValue : null;
 
           const remainingTime = Math.max(0, Math.round((timer.offTime - Date.now()) / 1000));
           const previousTimeOn = timer.timeOn;
@@ -319,13 +343,23 @@ export default class TimerApp extends Homey.App {
           );
 
           await this.cancelTimer(device);
+
+          capabilityInstance = apiDevice.makeCapabilityInstance(action.capability, (value: any) => {
+            if (!value || value === 0) {
+              this.log(`Listener: Device ${device.name} [${device.id}] turned off or dimmed to zero, disabling timer`);
+              this.cancelTimer(device);
+            }
+          });
         } else {
           if (action.capability === "dim" && restore === "yes") {
             oldValue = deviceCapability.value as number;
             this.log(`Remembered state for ${device.name} [${device.id}] oldValue: ${oldValue}`);
           }
 
-          await this.setDeviceCapabilityState(device, action.capability, action.value);
+          if (action.capability === "dim" && hasOnOff && apiDevice.capabilitiesObj.onoff.value === false) {
+            await this.setDeviceCapabilityState(device, "onoff", true, apiDevice);
+          }
+          await this.setDeviceCapabilityState(device, action.capability, action.value, apiDevice);
 
           capabilityInstance = apiDevice.makeCapabilityInstance(action.capability, (value: any) => {
             if (!value || value === 0) {
@@ -456,18 +490,31 @@ export default class TimerApp extends Homey.App {
    * @param capabilityId - The capability to be set.
    * @param value - The value to set the capability to.
    */
-  async setDeviceCapabilityState(device: Device, capabilityId: string, value: any) {
+  async setDeviceCapabilityState(device: Device, capabilityId: string, value: any, apiDevice?: any) {
     this.log(`Set device ${device.name} [${device.id}] capability ${capabilityId} to ${value}`);
     try {
       const api = await this.getApi();
+      if (!apiDevice) {
+        try {
+          apiDevice = await api.devices.getDevice({ id: device.id });
+        } catch (error) {
+          this.log(`Error loading device ${device.name} [${device.id}] for capability ${capabilityId}: ${error}`);
+          return;
+        }
+      }
+      if (!apiDevice.capabilitiesObj || !(capabilityId in apiDevice.capabilitiesObj)) {
+        this.log(`Device ${device.name} [${device.id}] does not support capability ${capabilityId}.`);
+        return;
+      }
       await api.devices.setCapabilityValue({
         deviceId: device.id,
         capabilityId: capabilityId,
         value: value
       });
       // Update cache of apiDevice.capabilitiesObj
-      const apiDevice = await api.devices.getDevice({ id: device.id });
-      apiDevice.capabilitiesObj[capabilityId].value = value;
+      if (apiDevice.capabilitiesObj && apiDevice.capabilitiesObj[capabilityId]) {
+        apiDevice.capabilitiesObj[capabilityId].value = value;
+      }
 
       // **Replace direct saveTimers call with scheduleSaveTimers for debounced saving**
       await this.scheduleSaveTimers();
@@ -481,11 +528,9 @@ export default class TimerApp extends Homey.App {
    *
    * @returns The Homey API instance.
    */
-  getApi(): typeof HomeyAPIApp {
+  async getApi() {
     if (!this.api) {
-      this.api = new HomeyAPIApp({
-        homey: this.homey
-      });
+      this.api = await HomeyAPI.createAppAPI({ homey: this.homey });
     }
     return this.api;
   }
@@ -533,6 +578,20 @@ export default class TimerApp extends Homey.App {
     }));
     await this.homey.settings.set('timers', storedTimers);
     this.log("Timers have been saved to persistent storage.");
+  }
+
+  /**
+   * Returns duration in seconds.
+   */
+  private getTimeOnSeconds(args: any): number {
+    if (args && typeof args.duration === "number") {
+      return args.duration / 1000;
+    }
+    if (args && typeof args.time_on === "number") {
+      return args.time_on;
+    }
+    const fallback = Number(args?.duration ?? args?.time_on);
+    return Number.isFinite(fallback) ? fallback : 0;
   }
 
   /**

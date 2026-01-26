@@ -58,5 +58,8 @@
   },
   "0.8.13": {
     "en": "New app logo, code improvements, sort devices alphabetically, add logos"
+  },
+  "0.8.14": {
+    "en": "Timer fixes and Homey API update; improved dim timer behavior; flow cards updated with duration picker and shorter titles"
   }
 }
