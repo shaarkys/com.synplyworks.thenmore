@@ -1,1 +1,18 @@
-{}
+{
+  "settings": {
+    "debug_title": "Timeline debug",
+    "debug_label": "Write timer lifecycle events to the Homey timeline",
+    "debug_hint": "Useful for troubleshooting which timer actions ran, but it can create a lot of timeline entries.",
+    "save": "Save settings",
+    "saved": "Settings saved."
+  },
+  "timeline": {
+    "started": "**Timer** started for **__device__** for **__seconds__s** (__capability__ = __value__).",
+    "replaced": "**Timer** replaced for **__device__** with **__seconds__s** (__capability__ = __value__).",
+    "cancelled": "**Timer** cancelled for **__device__**.",
+    "expired": "**Timer** expired for **__device__** and set **__capability__** to **__value__**.",
+    "restored": "**Timer** restored for **__device__** with **__seconds__s** remaining.",
+    "offline_expired": "**Timer** for **__device__** expired while Homey was offline (__capability__).",
+    "skipped": "**Timer** skipped for **__device__** because the device was already on (**__seconds__s** requested)."
+  }
+}

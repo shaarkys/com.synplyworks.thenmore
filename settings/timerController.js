@@ -2,9 +2,33 @@ angular.module('TimerApp',['smart-table'])
     .controller('TimerSettingsController', ($scope, $timeout) => {
         var homey;
         $scope.timers = {};
+        $scope.settings = {
+            timelineDebugEnabled: false,
+        };
+        $scope.ui = {};
+
+        const safeApply = () => {
+            if (!$scope.$$phase) {
+                $scope.$digest();
+            }
+        };
 
         $scope.initHomey = (homey) => {
             this.homey = homey;
+            $scope.ui = {
+                debugTitle: this.homey.__('settings.debug_title'),
+                debugLabel: this.homey.__('settings.debug_label'),
+                debugHint: this.homey.__('settings.debug_hint'),
+                saveSettings: this.homey.__('settings.save'),
+                settingsSaved: this.homey.__('settings.saved'),
+            };
+
+            this.homey.get('timeline_debug_enabled', (err, result) => {
+                if (err) return this.homey.alert(err);
+
+                $scope.settings.timelineDebugEnabled = result === true;
+                safeApply();
+            });
 
             // listen to add timer event
             this.homey.on('timer_started', (addedTimer) => {
@@ -41,7 +65,7 @@ angular.module('TimerApp',['smart-table'])
                 }, {});
 
 
-            $scope.$digest();
+            safeApply();
 
             // keep refreshing, as long as there are timers
             if (Object.keys($scope.timers).length) {
@@ -55,6 +79,14 @@ angular.module('TimerApp',['smart-table'])
         $scope.cancelTimer = (deviceId) => {
             this.homey.api('DELETE', `/timers/${deviceId}`, null, function( err, result ) {
                 if (err) return this.homey.alert(err);
+            });
+        }
+
+        $scope.saveSettings = () => {
+            this.homey.set('timeline_debug_enabled', !!$scope.settings.timelineDebugEnabled, (err) => {
+                if (err) return this.homey.alert(err);
+
+                this.homey.alert($scope.ui.settingsSaved);
             });
         }
 

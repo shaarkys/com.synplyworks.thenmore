@@ -1,1 +1,18 @@
-{}
+{
+  "settings": {
+    "debug_title": "Timeline debug",
+    "debug_label": "Schrijf timergebeurtenissen naar de Homey-tijdlijn",
+    "debug_hint": "Handig voor troubleshooting van timeracties, maar dit kan veel tijdlijnitems opleveren.",
+    "save": "Instellingen opslaan",
+    "saved": "Instellingen opgeslagen."
+  },
+  "timeline": {
+    "started": "**Timer** gestart voor **__device__** voor **__seconds__s** (__capability__ = __value__).",
+    "replaced": "**Timer** vervangen voor **__device__** met **__seconds__s** (__capability__ = __value__).",
+    "cancelled": "**Timer** geannuleerd voor **__device__**.",
+    "expired": "**Timer** verlopen voor **__device__** en **__capability__** ingesteld op **__value__**.",
+    "restored": "**Timer** hersteld voor **__device__** met nog **__seconds__s** resterend.",
+    "offline_expired": "**Timer** voor **__device__** is verlopen terwijl Homey offline was (__capability__).",
+    "skipped": "**Timer** overgeslagen voor **__device__** omdat het apparaat al aan stond (**__seconds__s** gevraagd)."
+  }
+}

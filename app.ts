@@ -6,6 +6,7 @@ const { HomeyAPI } = require("homey-api");
 import Device = AthomHomeyAPI.ManagerDevices.Device;
 
 const DEBUG = process.env.DEBUG === "1";
+const TIMELINE_DEBUG_SETTING_KEY = "timeline_debug_enabled";
 
 interface Timer {
   id: NodeJS.Timeout;
@@ -126,6 +127,48 @@ export default class TimerApp extends Homey.App {
     this.registerDeviceAutocompleteListener(isTimerRunning, 'onoff');
   }
 
+  private isTimelineDebugEnabled(): boolean {
+    return this.homey.settings.get(TIMELINE_DEBUG_SETTING_KEY) === true;
+  }
+
+  private formatTimelineTagValue(value: any): string {
+    if (typeof value === "number") {
+      return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    }
+
+    if (typeof value === "boolean") {
+      return value ? "true" : "false";
+    }
+
+    if (value === null || value === undefined) {
+      return "null";
+    }
+
+    return String(value);
+  }
+
+  private async createTimelineDebugNotification(
+    key: string,
+    tags: Record<string, string | number | boolean>
+  ): Promise<void> {
+    if (!this.isTimelineDebugEnabled()) {
+      return;
+    }
+
+    try {
+      await this.homey.notifications.createNotification({
+        excerpt: this.homey.__(
+          key,
+          Object.fromEntries(
+            Object.entries(tags).map(([tagKey, tagValue]) => [tagKey, this.formatTimelineTagValue(tagValue)])
+          )
+        ),
+      });
+    } catch (error) {
+      this.log(`Failed to create timeline debug notification for ${key}: ${error}`);
+    }
+  }
+
   /**
    * Registers an autocomplete listener for a given flow card based on the capability type.
    *
@@ -190,6 +233,10 @@ export default class TimerApp extends Homey.App {
       if (remainingTime <= 0) {
         // Timer has already expired while Homey was offline. Execute the timeout action immediately.
         this.log(`Restored timer for device ${device.name} [${device.id}] has already expired. Executing timeout action.`);
+        await this.createTimelineDebugNotification("timeline.offline_expired", {
+          device: device.name,
+          capability: storedTimer.capability,
+        });
         await this.executeTimeoutAction(device, storedTimer);
         continue;
       }
@@ -202,18 +249,29 @@ export default class TimerApp extends Homey.App {
           const currentTimer = this.timers[device.id];
           if (currentTimer && currentTimer.id === timeoutId) {
             this.cleanupTimer(device);
+            let timeoutValue: any;
 
             if (currentTimer.oldValue !== null && currentTimer.oldValue !== undefined) {
-              await this.setDeviceCapabilityState(device, currentTimer.capability, currentTimer.oldValue);
+              timeoutValue = currentTimer.oldValue;
+              await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
             } else {
               if (currentTimer.capability === "onoff") {
-                await this.setDeviceCapabilityState(device, "onoff", false);
+                timeoutValue = false;
+                await this.setDeviceCapabilityState(device, "onoff", timeoutValue);
               } else if (currentTimer.capability === "dim") {
-                await this.setDeviceCapabilityState(device, "dim", 0);
+                timeoutValue = 0;
+                await this.setDeviceCapabilityState(device, "dim", timeoutValue);
               } else {
-                await this.setDeviceCapabilityState(device, currentTimer.capability, false);
+                timeoutValue = false;
+                await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
               }
             }
+
+            await this.createTimelineDebugNotification("timeline.expired", {
+              device: device.name,
+              capability: currentTimer.capability,
+              value: timeoutValue,
+            });
           } else {
             this.log(`Timer expired for ${device.name} [${device.id}], but it was already canceled or replaced with a new timer.`);
           }
@@ -249,6 +307,10 @@ export default class TimerApp extends Homey.App {
       };
 
       this.log(`Restored timer for device ${device.name} [${device.id}] with ${remainingTime / 1000} seconds remaining.`);
+      await this.createTimelineDebugNotification("timeline.restored", {
+        device: device.name,
+        seconds: Math.round(remainingTime / 1000),
+      });
     }
 
     // Remove any expired timers from storage
@@ -332,6 +394,8 @@ export default class TimerApp extends Homey.App {
         ignoreWhenOn === "no" ||
         (timer && (overruleLongerTimeouts === "yes" || Date.now() + timeOn * 1000 > timer.offTime))
       ) {
+        const isReplacingTimer = !!timer;
+
         if (timer) {
           oldValue = restore === "yes" ? timer.oldValue : null;
 
@@ -342,7 +406,7 @@ export default class TimerApp extends Homey.App {
               `remaining time: ${remainingTime} seconds out of ${previousTimeOn} seconds`
           );
 
-          await this.cancelTimer(device);
+          await this.cancelTimer(device, { emitTimeline: false });
 
           capabilityInstance = apiDevice.makeCapabilityInstance(action.capability, (value: any) => {
             if (!value || value === 0) {
@@ -382,18 +446,29 @@ export default class TimerApp extends Homey.App {
             const currentTimer = this.timers[device.id];
             if (currentTimer && currentTimer.id === timeoutId) {
               this.cleanupTimer(device);
+              let timeoutValue: any;
 
               if (currentTimer.oldValue !== null && currentTimer.oldValue !== undefined) {
-                await this.setDeviceCapabilityState(device, currentTimer.capability, currentTimer.oldValue);
+                timeoutValue = currentTimer.oldValue;
+                await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
               } else {
                 if (currentTimer.capability === "onoff") {
-                  await this.setDeviceCapabilityState(device, "onoff", false);
+                  timeoutValue = false;
+                  await this.setDeviceCapabilityState(device, "onoff", timeoutValue);
                 } else if (currentTimer.capability === "dim") {
-                  await this.setDeviceCapabilityState(device, "dim", 0);
+                  timeoutValue = 0;
+                  await this.setDeviceCapabilityState(device, "dim", timeoutValue);
                 } else {
-                  await this.setDeviceCapabilityState(device, currentTimer.capability, false);
+                  timeoutValue = false;
+                  await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
                 }
               }
+
+              await this.createTimelineDebugNotification("timeline.expired", {
+                device: device.name,
+                capability: currentTimer.capability,
+                value: timeoutValue,
+              });
             } else {
               this.log(`Timer expired for ${device.name} [${device.id}], but it was already canceled or replaced with a new timer.`);
             }
@@ -424,6 +499,21 @@ export default class TimerApp extends Homey.App {
           value: action.value,
           oldValue: oldValue
         });
+
+        await this.createTimelineDebugNotification(
+          isReplacingTimer ? "timeline.replaced" : "timeline.started",
+          {
+            device: device.name,
+            seconds: timeOn,
+            capability: action.capability,
+            value: action.value,
+          }
+        );
+      } else {
+        await this.createTimelineDebugNotification("timeline.skipped", {
+          device: device.name,
+          seconds: timeOn,
+        });
       }
 
       return true;
@@ -439,13 +529,19 @@ export default class TimerApp extends Homey.App {
    * @param device - The device whose timer is to be canceled.
    * @returns A promise that resolves to true upon successful cancellation.
    */
-  async cancelTimer(device: Device) {
+  async cancelTimer(device: Device, options: { emitTimeline?: boolean } = {}) {
     const timer = this.timers[device.id];
+    const emitTimeline = options.emitTimeline !== false;
     // if timer is running cancel timer and remove reference
     if (timer) {
       clearTimeout(timer.id);
       this.log(`Cancelled timer for device ${device.name} [${device.id}]`);
       this.cleanupTimer(device);
+      if (emitTimeline) {
+        await this.createTimelineDebugNotification("timeline.cancelled", {
+          device: device.name,
+        });
+      }
     } else {
       this.log(`WARNING: No timer to Cancel for device ${device.name} [${device.id}]`);
     }

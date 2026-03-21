@@ -48,10 +48,35 @@
                 margin-left: 20px;
             }
 
+            .settingsPanel {
+                margin-bottom: 20px;
+                padding: 10px;
+                border: 1px solid #22a;
+                background-color: #f7f9ff;
+            }
+
+            .settingsPanel h2 {
+                margin-top: 0;
+            }
+
+            .settingsPanel p {
+                margin: 8px 0 12px 0;
+            }
+
         </style>
     </head>
     <body id="timerManagement" ng-controller="TimerSettingsController as vm">
         <h1>Timer management</h1>
+
+        <div class="settingsPanel">
+            <h2>{{ ui.debugTitle }}</h2>
+            <label>
+                <input type="checkbox" ng-model="settings.timelineDebugEnabled">
+                {{ ui.debugLabel }}
+            </label>
+            <p>{{ ui.debugHint }}</p>
+            <button type="button" ng-click="saveSettings()" class="btn">{{ ui.saveSettings }}</button>
+        </div>
 
         <p>Overview of running timers</p>
         <table class="timerTable" st-table="timers"> 
