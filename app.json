@@ -69,6 +69,29 @@
     }
   },
   "flow": {
+    "triggers": [
+      {
+        "id": "timer_finished",
+        "title": {
+          "en": "Timer finished",
+          "nl": "Timer afgelopen"
+        },
+        "titleFormatted": {
+          "en": "Timer for [[device]] finished",
+          "nl": "Timer voor [[device]] is afgelopen"
+        },
+        "args": [
+          {
+            "name": "device",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "The device for which the timer finished",
+              "nl": "Het apparaat waarvoor de timer is afgelopen"
+            }
+          }
+        ]
+      }
+    ],
     "conditions": [
       {
         "id": "is_timer_running",

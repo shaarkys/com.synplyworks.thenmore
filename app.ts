@@ -34,6 +34,7 @@ export default class TimerApp extends Homey.App {
   private timers: { [deviceId: string]: Timer } = {};
   private api: any | null = null;
   private cloudUrl: string = "";
+  private timerFinishedTrigger: Homey.FlowCardTrigger | null = null;
 
   // Keep track of devices currently setting a timer
   private settingTimer: { [deviceId: string]: boolean } = {};
@@ -134,6 +135,14 @@ export default class TimerApp extends Homey.App {
       });
     this.registerDeviceAutocompleteListener(cancelTimer, 'onoff');
 
+    // Trigger Card: timer_finished
+    this.timerFinishedTrigger = this.homey.flow.getTriggerCard("timer_finished");
+    this.timerFinishedTrigger
+      .registerRunListener((args: any, state: any) => {
+        return args.device?.id === state?.deviceId;
+      });
+    this.registerDeviceAutocompleteListener(this.timerFinishedTrigger, 'onoff');
+
     // Condition Card: is_timer_running
     const isTimerRunning = this.homey.flow.getConditionCard("is_timer_running");
     isTimerRunning
@@ -192,7 +201,7 @@ export default class TimerApp extends Homey.App {
    * @param capabilityType - The type of capability ('onoff' or 'dim') to filter devices.
    */
   private registerDeviceAutocompleteListener(
-    actionCard: Homey.FlowCardAction | Homey.FlowCardCondition,
+    actionCard: Homey.FlowCardAction | Homey.FlowCardCondition | Homey.FlowCardTrigger,
     capabilityType: 'onoff' | 'dim'
   ) {
     actionCard
@@ -265,29 +274,15 @@ export default class TimerApp extends Homey.App {
           const currentTimer = this.timers[device.id];
           if (currentTimer && currentTimer.id === timeoutId) {
             this.cleanupTimer(device);
-            let timeoutValue: any;
-
-            if (currentTimer.oldValue !== null && currentTimer.oldValue !== undefined) {
-              timeoutValue = currentTimer.oldValue;
-              await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
-            } else {
-              if (currentTimer.capability === "onoff") {
-                timeoutValue = false;
-                await this.setDeviceCapabilityState(device, "onoff", timeoutValue);
-              } else if (currentTimer.capability === "dim") {
-                timeoutValue = 0;
-                await this.setDeviceCapabilityState(device, "dim", timeoutValue);
-              } else {
-                timeoutValue = false;
-                await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
-              }
-            }
+            const timeoutValue = this.getTimeoutValue(currentTimer.capability, currentTimer.oldValue);
+            await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
 
             await this.createTimelineDebugNotification("timeline.expired", {
               device: device.name,
               capability: currentTimer.capability,
               value: timeoutValue,
             });
+            await this.triggerTimerFinished(device);
           } else {
             this.log(`Timer expired for ${device.name} [${device.id}], but it was already canceled or replaced with a new timer.`);
           }
@@ -343,6 +338,7 @@ export default class TimerApp extends Homey.App {
     if (this.timers[device.id]) {
       this.cleanupTimer(device);
     }
+    await this.triggerTimerFinished(device);
   }
 
   /**
@@ -457,6 +453,7 @@ export default class TimerApp extends Homey.App {
                 capability: currentTimer.capability,
                 value: timeoutValue,
               });
+              await this.triggerTimerFinished(device);
             } else {
               this.log(`Timer expired for ${device.name} [${device.id}], but it was already canceled or replaced with a new timer.`);
             }
@@ -714,6 +711,18 @@ export default class TimerApp extends Homey.App {
     }
 
     return false;
+  }
+
+  private async triggerTimerFinished(device: Device): Promise<void> {
+    if (!this.timerFinishedTrigger) {
+      return;
+    }
+
+    try {
+      await this.timerFinishedTrigger.trigger({}, { deviceId: device.id });
+    } catch (error) {
+      this.log(`Failed to trigger timer_finished for device ${device.name} [${device.id}]: ${error}`);
+    }
   }
 
   /**
