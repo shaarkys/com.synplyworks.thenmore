@@ -94,6 +94,22 @@ export default class TimerApp extends Homey.App {
       });
     this.registerDeviceAutocompleteListener(thenMoreOnOff, 'onoff');
 
+    // Action Card: then_more_off_on
+    const thenMoreOffOn = this.homey.flow.getActionCard("then_more_off_on");
+    thenMoreOffOn
+      .registerRunListener(async (args: any) => {
+        const timeOffSeconds = this.getTimeOnSeconds(args);
+        return this.runScript(
+          args.device,
+          { capability: "onoff", value: false },
+          timeOffSeconds,
+          args.ignore_when_off,
+          args.overrule_longer_timeouts,
+          "yes"
+        );
+      });
+    this.registerDeviceAutocompleteListener(thenMoreOffOn, 'onoff');
+
     // Action Card: then_more_dim
     const thenMoreDim = this.homey.flow.getActionCard("then_more_dim");
     thenMoreDim
@@ -286,12 +302,7 @@ export default class TimerApp extends Homey.App {
         continue;
       }
 
-      const capabilityInstance = device.makeCapabilityInstance(storedTimer.capability, (value: any) => {
-        if (!value || (storedTimer.capability === "dim" && value === 0)) {
-          this.log(`Listener: Device ${device.name} [${device.id}] turned off or dimmed to zero, disabling timer`);
-          this.cancelTimer(device);
-        }
-      });
+      const capabilityInstance = this.createCapabilityListener(device, storedTimer.capability, storedTimer.value);
 
       // Re-create the timer object with the capabilityInstance
       this.timers[device.id] = {
@@ -325,17 +336,8 @@ export default class TimerApp extends Homey.App {
    * @param storedTimer - The stored timer data.
    */
   private async executeTimeoutAction(device: Device, storedTimer: StoredTimer) {
-    if (storedTimer.oldValue !== null && storedTimer.oldValue !== undefined) {
-      await this.setDeviceCapabilityState(device, storedTimer.capability, storedTimer.oldValue);
-    } else {
-      if (storedTimer.capability === "onoff") {
-        await this.setDeviceCapabilityState(device, "onoff", false);
-      } else if (storedTimer.capability === "dim") {
-        await this.setDeviceCapabilityState(device, "dim", 0);
-      } else {
-        await this.setDeviceCapabilityState(device, storedTimer.capability, false);
-      }
-    }
+    const timeoutValue = this.getTimeoutValue(storedTimer.capability, storedTimer.oldValue);
+    await this.setDeviceCapabilityState(device, storedTimer.capability, timeoutValue);
 
     // Cleanup the timer, which destroys the capability listener and removes the timer reference
     if (this.timers[device.id]) {
@@ -381,16 +383,20 @@ export default class TimerApp extends Homey.App {
       }
       const timer = this.timers[device.id];
 
-      let oldValue: number | null = null;
+      let oldValue: any = null;
       let capabilityInstance = null;
       const isDimCapability = action.capability === "dim";
       const hasOnOff = apiDevice.capabilitiesObj && apiDevice.capabilitiesObj.onoff;
       const isCurrentlyOff = hasOnOff
         ? apiDevice.capabilitiesObj.onoff.value === false
         : (isDimCapability ? deviceCapability.value === 0 : deviceCapability.value === false);
+      const isAlreadyInTimedState =
+        action.capability === "onoff"
+          ? deviceCapability.value === action.value
+          : !isCurrentlyOff;
 
       if (
-        isCurrentlyOff ||
+        !isAlreadyInTimedState ||
         ignoreWhenOn === "no" ||
         (timer && (overruleLongerTimeouts === "yes" || Date.now() + timeOn * 1000 > timer.offTime))
       ) {
@@ -408,15 +414,17 @@ export default class TimerApp extends Homey.App {
 
           await this.cancelTimer(device, { emitTimeline: false });
 
-          capabilityInstance = apiDevice.makeCapabilityInstance(action.capability, (value: any) => {
-            if (!value || value === 0) {
-              this.log(`Listener: Device ${device.name} [${device.id}] turned off or dimmed to zero, disabling timer`);
-              this.cancelTimer(device);
-            }
-          });
+          if (action.capability === "dim" && hasOnOff && apiDevice.capabilitiesObj.onoff.value === false) {
+            await this.setDeviceCapabilityState(device, "onoff", true, apiDevice);
+          }
+          if (deviceCapability.value !== action.value) {
+            await this.setDeviceCapabilityState(device, action.capability, action.value, apiDevice);
+          }
+
+          capabilityInstance = this.createCapabilityListener(apiDevice, action.capability, action.value);
         } else {
-          if (action.capability === "dim" && restore === "yes") {
-            oldValue = deviceCapability.value as number;
+          if (restore === "yes") {
+            oldValue = deviceCapability.value;
             this.log(`Remembered state for ${device.name} [${device.id}] oldValue: ${oldValue}`);
           }
 
@@ -425,12 +433,7 @@ export default class TimerApp extends Homey.App {
           }
           await this.setDeviceCapabilityState(device, action.capability, action.value, apiDevice);
 
-          capabilityInstance = apiDevice.makeCapabilityInstance(action.capability, (value: any) => {
-            if (!value || value === 0) {
-              this.log(`Listener: Device ${device.name} [${device.id}] turned off or dimmed to zero, disabling timer`);
-              this.cancelTimer(device);
-            }
-          });
+          capabilityInstance = this.createCapabilityListener(apiDevice, action.capability, action.value);
         }
 
         let logMessage = `Set timer for device ${device.name} [${device.id}] to ${timeOn} seconds`;
@@ -446,23 +449,8 @@ export default class TimerApp extends Homey.App {
             const currentTimer = this.timers[device.id];
             if (currentTimer && currentTimer.id === timeoutId) {
               this.cleanupTimer(device);
-              let timeoutValue: any;
-
-              if (currentTimer.oldValue !== null && currentTimer.oldValue !== undefined) {
-                timeoutValue = currentTimer.oldValue;
-                await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
-              } else {
-                if (currentTimer.capability === "onoff") {
-                  timeoutValue = false;
-                  await this.setDeviceCapabilityState(device, "onoff", timeoutValue);
-                } else if (currentTimer.capability === "dim") {
-                  timeoutValue = 0;
-                  await this.setDeviceCapabilityState(device, "dim", timeoutValue);
-                } else {
-                  timeoutValue = false;
-                  await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
-                }
-              }
+              const timeoutValue = this.getTimeoutValue(currentTimer.capability, currentTimer.oldValue);
+              await this.setDeviceCapabilityState(device, currentTimer.capability, timeoutValue);
 
               await this.createTimelineDebugNotification("timeline.expired", {
                 device: device.name,
@@ -686,8 +674,46 @@ export default class TimerApp extends Homey.App {
     if (args && typeof args.time_on === "number") {
       return args.time_on;
     }
-    const fallback = Number(args?.duration ?? args?.time_on);
+    if (args && typeof args.time_off === "number") {
+      return args.time_off;
+    }
+    const fallback = Number(args?.duration ?? args?.time_on ?? args?.time_off);
     return Number.isFinite(fallback) ? fallback : 0;
+  }
+
+  private createCapabilityListener(device: any, capability: string, targetValue: any) {
+    return device.makeCapabilityInstance(capability, (value: any) => {
+      if (this.shouldCancelTimer(capability, targetValue, value)) {
+        this.log(
+          `Listener: Device ${device.name} [${device.id}] changed ${capability} from timed value ${targetValue} to ${value}, disabling timer`
+        );
+        void this.cancelTimer(device);
+      }
+    });
+  }
+
+  private shouldCancelTimer(capability: string, targetValue: any, value: any): boolean {
+    if (capability === "dim") {
+      return !value || value === 0;
+    }
+
+    if (capability === "onoff") {
+      return value !== targetValue;
+    }
+
+    return value !== targetValue;
+  }
+
+  private getTimeoutValue(capability: string, oldValue: any): any {
+    if (oldValue !== null && oldValue !== undefined) {
+      return oldValue;
+    }
+
+    if (capability === "dim") {
+      return 0;
+    }
+
+    return false;
   }
 
   /**

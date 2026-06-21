@@ -1,0 +1,74 @@
+{
+  "id": "then_more_off_on",
+  "title": {
+    "en": "Timer off/on",
+    "nl": "Timer uit/aan"
+  },
+  "titleFormatted": {
+    "en": "Timer for [[device]] off [[time_off]] seconds, [[ignore_when_off]], [[overrule_longer_timeouts]]",
+    "nl": "Timer voor [[device]] uit [[time_off]] seconden, [[ignore_when_off]], [[overrule_longer_timeouts]]"
+  },
+  "hint": {
+    "en": "With this action you can keep your device disabled for some time and then restore the previous on/off state",
+    "nl": "Met deze actie kan je je apparaat tijdelijk uitschakelen en daarna de vorige aan/uit-status herstellen"
+  },
+  "args": [
+    {
+      "type": "autocomplete",
+      "name": "device",
+      "placeholder": {
+        "en": "Which on/off capable device",
+        "nl": "Welk apparaat dat aan/uit te zetten is"
+      }
+    },
+    {
+      "name": "time_off",
+      "type": "number",
+      "min": 1,
+      "placeholder": {
+        "en": "Time (in s) to keep the device off",
+        "nl": "Tijd (in s) om het apparaat uit te houden"
+      }
+    },
+    {
+      "name": "ignore_when_off",
+      "type": "dropdown",
+      "values": [
+        {
+          "id": "yes",
+          "label": {
+            "en": "Don't start timer, when the device is already off",
+            "nl": "Start geen timer, als het apparaat al uit staat"
+          }
+        },
+        {
+          "id": "no",
+          "label": {
+            "en": "Start timer, even when the device is already off",
+            "nl": "Start de timer, zelfs als het apparaat al uit staat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "overrule_longer_timeouts",
+      "type": "dropdown",
+      "values": [
+        {
+          "id": "no",
+          "label": {
+            "en": "Use longest timeouts",
+            "nl": "Langste timeouts gebruiken"
+          }
+        },
+        {
+          "id": "yes",
+          "label": {
+            "en": "Shortest timeouts wins",
+            "nl": "Kortste timeouts worden toegepast"
+          }
+        }
+      ]
+    }
+  ]
+}
