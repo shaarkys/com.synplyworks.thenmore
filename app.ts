@@ -84,7 +84,7 @@ interface ExportedTimer {
   restoreState: RestoreState;
 }
 
-export default class TimerApp extends Homey.App {
+class TimerApp extends Homey.App {
   private timers: Record<string, Timer> = {};
 
   private devicesApi: ApiEndpoint | null = null;
@@ -885,3 +885,5 @@ export default class TimerApp extends Homey.App {
       || typeof value === "string";
   }
 }
+
+export = TimerApp;
