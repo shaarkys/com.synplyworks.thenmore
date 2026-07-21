@@ -1,130 +1,98 @@
 <!doctype html>
-<html ng-app="TimerApp">
-    <head>
-        <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
-        <script type="text/javascript" src="/manager/webserver/assets/js/angular.js"></script>
-        <script type="text/javascript" src="smart-table.min.js"></script>
-        <script type="text/javascript" src="timerController.js"></script>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+    <script type="text/javascript" src="timerController.js"></script>
+    <style>
+      .timer-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+      }
 
-        <style>
-            table.timerTable {
-                width: 100%;
-                border-collapse: collapse;
-            }
+      .timer-table th,
+      .timer-table td {
+        padding: 0.6rem;
+        border-bottom: 1px solid var(--homey-color-line, #ddd);
+        text-align: left;
+        vertical-align: top;
+      }
 
-            table.timerTable, table.timerTable th, table.timerTable td {
-                border: #22a 1px solid;
-            }
+      .timer-table th {
+        font-weight: 600;
+      }
 
-            table.timerTable, table.timerTable th, table.timerTable td {
-                padding: 5px;
-                text-align: left;
-            }
+      .timer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
 
-            table.timerTable tr:hover {
-                background-color: #ddf;
-            }
+      .timer-details {
+        margin-top: 1rem;
+      }
 
-            tr:nth-child(even) {
-                background-color: #eee;
-            }
+      .timer-details dt {
+        margin-top: 0.5rem;
+        font-weight: 600;
+      }
 
-            th {
-                background-color: #22a;
-                color: white;
-            }
+      .timer-details dd {
+        margin-left: 0;
+      }
 
-            dl.timerDetails {
-                margin-top: 20px;
-                padding: 5px;
-                border: 1px solid #22a;
-                display: inline-block;
-            }
+      .is-hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="homey-header">
+      <h1 class="homey-title" id="page-title"></h1>
+      <p class="homey-subtitle" id="page-subtitle"></p>
+    </header>
 
-            dl.timerDetails dt {
-                font-weight: bold;
-            }
-            dl.timerDetails dd {
-                margin-left: 20px;
-            }
+    <fieldset class="homey-form-fieldset">
+      <legend class="homey-form-legend" id="debug-title"></legend>
+      <div class="homey-form-group">
+        <label class="homey-form-checkbox">
+          <input class="homey-form-checkbox-input" id="timeline-debug-enabled" type="checkbox">
+          <span class="homey-form-checkbox-checkmark"></span>
+          <span class="homey-form-checkbox-text" id="debug-label"></span>
+        </label>
+        <p class="homey-form-hint" id="debug-hint"></p>
+      </div>
+      <button type="button" id="save-settings" class="homey-button-primary-full"></button>
+    </fieldset>
 
-            .settingsPanel {
-                margin-bottom: 20px;
-                padding: 10px;
-                border: 1px solid #22a;
-                background-color: #f7f9ff;
-            }
+    <section>
+      <h2 class="homey-title" id="timers-title"></h2>
+      <p id="timers-empty"></p>
+      <table class="timer-table" id="timers-table">
+        <thead>
+          <tr>
+            <th id="timer-name-heading"></th>
+            <th id="timer-remaining-heading"></th>
+            <th id="timer-action-heading"></th>
+          </tr>
+        </thead>
+        <tbody id="timers-body"></tbody>
+      </table>
+    </section>
 
-            .settingsPanel h2 {
-                margin-top: 0;
-            }
-
-            .settingsPanel p {
-                margin: 8px 0 12px 0;
-            }
-
-        </style>
-    </head>
-    <body id="timerManagement" ng-controller="TimerSettingsController as vm">
-        <h1>Timer management</h1>
-
-        <div class="settingsPanel">
-            <h2>{{ ui.debugTitle }}</h2>
-            <label>
-                <input type="checkbox" ng-model="settings.timelineDebugEnabled">
-                {{ ui.debugLabel }}
-            </label>
-            <p>{{ ui.debugHint }}</p>
-            <button type="button" ng-click="saveSettings()" class="btn">{{ ui.saveSettings }}</button>
-        </div>
-
-        <p>Overview of running timers</p>
-        <table class="timerTable" st-table="timers"> 
-            <thead>
-                <tr>
-                    <th>Timer Name</th>
-                    <th>Time remaining</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr st-select-row="row" ng-repeat="timer in timers" ng-include="getTemplate(timer)"></tr>
-            </tbody>
-        </table>
-        
-        <script type="text/ng-template" id="display">
-            <td class="name">{{ timer.device.name }}</td>
-            <td class="remaining">{{ remainingInSeconds(timer.offTime) }}s</td>
-            <td>
-                <button type="button" ng-click="showDetails(timer)" class="btn">Show Details</button>
-                <button type="button" ng-click="cancelTimer(timer.device.id)" class="btn">Cancel Timer</button>
-            </td>
-        </script>
-
-        <dl ng-hide="detail == null" class="timerDetails">
-            <dt>Device Id</lh>
-                <dd>{{ detail.device.id }}</dd>
-            <dt>Device Name</lh>
-                <dd>{{ detail.device.name }}</dd>
-            <dt>Altered Device Capability</lh>
-                <dd>{{ detail.capability }}</dd>
-            <dt>Current Device Value</lh>
-                <dd>{{ detail.value }}</dd>
-            <dt>Current Device Old Value</lh>
-                <dd>{{ detail.oldValue }}</dd>
-        </dl>
-        
-        <script type="text/javascript">
-            this.timers = [];
-            
-            function onHomeyReady( Homey ){
-                // Tell Homey we're ready to be displayed
-                Homey.ready();
-                
-                var scope = angular.element(document.getElementById('timerManagement')).scope();
-                scope.initHomey(Homey);
-            }
-            </script>
-
-</body>
+    <dl class="timer-details is-hidden" id="timer-details">
+      <dt id="detail-device-id-label"></dt>
+      <dd id="detail-device-id"></dd>
+      <dt id="detail-device-name-label"></dt>
+      <dd id="detail-device-name"></dd>
+      <dt id="detail-capability-label"></dt>
+      <dd id="detail-capability"></dd>
+      <dt id="detail-value-label"></dt>
+      <dd id="detail-value"></dd>
+      <dt id="detail-old-value-label"></dt>
+      <dd id="detail-old-value"></dd>
+    </dl>
+  </body>
 </html>

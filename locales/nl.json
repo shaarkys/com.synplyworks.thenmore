@@ -1,10 +1,33 @@
 {
   "settings": {
+    "title": "Timerbeheer",
+    "subtitle": "Bekijk lopende timers en configureer diagnostische logboekregistratie.",
     "debug_title": "Timeline debug",
     "debug_label": "Schrijf timergebeurtenissen naar de Homey-tijdlijn",
     "debug_hint": "Handig voor troubleshooting van timeracties, maar dit kan veel tijdlijnitems opleveren.",
     "save": "Instellingen opslaan",
-    "saved": "Instellingen opgeslagen."
+    "saved": "Instellingen opgeslagen.",
+    "timers_title": "Lopende timers",
+    "no_timers": "Er zijn geen lopende timers.",
+    "timer_name": "Timernaam",
+    "time_remaining": "Resterende tijd",
+    "action": "Actie",
+    "show_details": "Details tonen",
+    "cancel_timer": "Timer annuleren",
+    "device_id": "Apparaat-ID",
+    "device_name": "Apparaatnaam",
+    "capability": "Aangestuurde capability",
+    "current_value": "Timerwaarde",
+    "previous_value": "Vorige waarde",
+    "seconds_remaining": "__seconds__s"
+  },
+  "errors": {
+    "invalid_device": "Er is geen geldig apparaat geselecteerd.",
+    "invalid_duration": "De timerduur moet een positief en eindig getal zijn.",
+    "invalid_capability_value": "De gevraagde capabilitywaarde is ongeldig.",
+    "unsupported_capability": "__device__ ondersteunt de instelbare capability __capability__ niet.",
+    "capability_update_failed": "Kon __capability__ voor __device__ niet instellen: __error__",
+    "device_load_failed": "Kon apparaat __device__ niet laden: __error__"
   },
   "timeline": {
     "started": "**Timer** gestart voor **__device__** voor **__seconds__s** (__capability__ = __value__).",
@@ -13,6 +36,7 @@
     "expired": "**Timer** verlopen voor **__device__** en **__capability__** ingesteld op **__value__**.",
     "restored": "**Timer** hersteld voor **__device__** met nog **__seconds__s** resterend.",
     "offline_expired": "**Timer** voor **__device__** is verlopen terwijl Homey offline was (__capability__).",
-    "skipped": "**Timer** overgeslagen voor **__device__** omdat het apparaat al aan stond (**__seconds__s** gevraagd)."
+    "skipped": "**Timer** overgeslagen voor **__device__** omdat de huidige timer of apparaatstatus voorrang heeft (**__seconds__s** gevraagd).",
+    "failed": "**Timer** voor **__device__** kon niet worden afgerond en probeert het opnieuw: __error__"
   }
 }
