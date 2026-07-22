@@ -11,3 +11,14 @@ test('compiled app entrypoint exports the Homey App class directly', () => {
   assert.match(compiledApp, /module\.exports = TimerApp;/);
   assert.doesNotMatch(compiledApp, /exports\.default = TimerApp;/);
 });
+
+test('settings controller loads after the settings page DOM', () => {
+  const settingsPage = fs.readFileSync(path.join(__dirname, '..', 'settings', 'index.html'), 'utf8');
+  const detailsIndex = settingsPage.indexOf('id="timer-details"');
+  const controllerIndex = settingsPage.indexOf('src="timerController.js"');
+  const bodyEndIndex = settingsPage.indexOf('</body>');
+
+  assert.ok(detailsIndex >= 0);
+  assert.ok(controllerIndex > detailsIndex);
+  assert.ok(controllerIndex < bodyEndIndex);
+});

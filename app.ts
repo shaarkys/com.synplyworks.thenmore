@@ -235,14 +235,22 @@ class TimerApp extends Homey.App {
       throw new Error(this.homey.__("errors.invalid_device"));
     }
 
-    return this.enqueueDeviceOperation(device.id, async () => this.runScriptLocked(
-      device,
-      action,
-      timeOn,
-      ignoreWhenOn,
-      overruleLongerTimeouts,
-      restore,
-    ));
+    try {
+      return await this.enqueueDeviceOperation(device.id, async () => this.runScriptLocked(
+        device,
+        action,
+        timeOn,
+        ignoreWhenOn,
+        overruleLongerTimeouts,
+        restore,
+      ));
+    } catch (error) {
+      this.error(
+        `Unable to start timer for ${device.name} [${device.id}] `
+        + `(${action.capability}=${action.value}): ${this.formatError(error)}`,
+      );
+      throw error;
+    }
   }
 
   private async runScriptLocked(
@@ -301,6 +309,10 @@ class TimerApp extends Homey.App {
     });
 
     if (!shouldStart) {
+      this.log(
+        `Skipped timer for device ${device.name} [${device.id}] because the current timer `
+        + `or device state takes precedence (${timeOn} seconds requested)`,
+      );
       await this.createTimelineDebugNotification("timeline.skipped", {
         device: device.name,
         seconds: timeOn,
@@ -352,6 +364,10 @@ class TimerApp extends Homey.App {
     this.timers[device.id] = timer;
     this.armTimer(timer);
     this.scheduleSaveTimers();
+    this.log(
+      `${isReplacingTimer ? "Replaced" : "Set"} timer for device ${device.name} [${device.id}] `
+      + `to ${timeOn} seconds (${action.capability}=${action.value})`,
+    );
 
     this.homey.api.realtime("timer_started", {
       timers: this.exportTimers(),

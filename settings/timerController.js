@@ -131,13 +131,18 @@ function saveSettings() {
 
 window.onHomeyReady = function onHomeyReady(Homey) {
   homeyClient = Homey;
-  translatePage();
-  byId('save-settings').addEventListener('click', saveSettings);
-  homeyClient.on('timer_started', event => updateTimers(event.timers));
-  homeyClient.on('timer_deleted', event => updateTimers(event.timers));
-  loadSettings();
-  loadTimers();
-  refreshInterval = setInterval(renderTimers, 1000);
-  window.addEventListener('beforeunload', () => clearInterval(refreshInterval), { once: true });
-  homeyClient.ready();
+  try {
+    translatePage();
+    byId('save-settings').addEventListener('click', saveSettings);
+    homeyClient.on('timer_started', event => updateTimers(event.timers));
+    homeyClient.on('timer_deleted', event => updateTimers(event.timers));
+    loadSettings();
+    loadTimers();
+    refreshInterval = setInterval(renderTimers, 1000);
+    window.addEventListener('beforeunload', () => clearInterval(refreshInterval), { once: true });
+  } catch (error) {
+    homeyClient.alert(error instanceof Error ? error.message : String(error));
+  } finally {
+    homeyClient.ready();
+  }
 };
