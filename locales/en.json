@@ -1,10 +1,33 @@
 {
   "settings": {
+    "title": "Timer management",
+    "subtitle": "View running timers and configure diagnostic logging.",
     "debug_title": "Timeline debug",
     "debug_label": "Write timer lifecycle events to the Homey timeline",
     "debug_hint": "Useful for troubleshooting which timer actions ran, but it can create a lot of timeline entries.",
     "save": "Save settings",
-    "saved": "Settings saved."
+    "saved": "Settings saved.",
+    "timers_title": "Running timers",
+    "no_timers": "There are no running timers.",
+    "timer_name": "Timer name",
+    "time_remaining": "Time remaining",
+    "action": "Action",
+    "show_details": "Show details",
+    "cancel_timer": "Cancel timer",
+    "device_id": "Device ID",
+    "device_name": "Device name",
+    "capability": "Controlled capability",
+    "current_value": "Timed value",
+    "previous_value": "Previous value",
+    "seconds_remaining": "__seconds__s"
+  },
+  "errors": {
+    "invalid_device": "No valid device was selected.",
+    "invalid_duration": "The timer duration must be a positive, finite number.",
+    "invalid_capability_value": "The requested capability value is invalid.",
+    "unsupported_capability": "__device__ does not support the settable capability __capability__.",
+    "capability_update_failed": "Could not set __capability__ for __device__: __error__",
+    "device_load_failed": "Could not load device __device__: __error__"
   },
   "timeline": {
     "started": "**Timer** started for **__device__** for **__seconds__s** (__capability__ = __value__).",
@@ -13,6 +36,7 @@
     "expired": "**Timer** expired for **__device__** and set **__capability__** to **__value__**.",
     "restored": "**Timer** restored for **__device__** with **__seconds__s** remaining.",
     "offline_expired": "**Timer** for **__device__** expired while Homey was offline (__capability__).",
-    "skipped": "**Timer** skipped for **__device__** because the device was already on (**__seconds__s** requested)."
+    "skipped": "**Timer** skipped for **__device__** because the current timer or device state takes precedence (**__seconds__s** requested).",
+    "failed": "**Timer** for **__device__** could not finish and will retry: __error__"
   }
 }

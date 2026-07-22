@@ -1,7 +1,7 @@
 {
   "id": "com.synplyworks.thenmore",
-  "version": "0.8.13",
-  "compatibility": ">=5.0.0",
+  "version": "0.8.15",
+  "compatibility": ">=12.9.0",
   "sdk": 3,
   "brandColor": "#0000FF",
   "name": {
