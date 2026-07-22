@@ -129,8 +129,9 @@ function saveSettings() {
   });
 }
 
-window.onHomeyReady = function onHomeyReady(Homey) {
+function onHomeyReady(Homey) {
   homeyClient = Homey;
+  homeyClient.ready();
   try {
     translatePage();
     byId('save-settings').addEventListener('click', saveSettings);
@@ -142,7 +143,7 @@ window.onHomeyReady = function onHomeyReady(Homey) {
     window.addEventListener('beforeunload', () => clearInterval(refreshInterval), { once: true });
   } catch (error) {
     homeyClient.alert(error instanceof Error ? error.message : String(error));
-  } finally {
-    homeyClient.ready();
   }
-};
+}
+
+window.onHomeyReady = onHomeyReady;

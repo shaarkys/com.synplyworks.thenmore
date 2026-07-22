@@ -11,6 +11,7 @@ import {
   shouldStartTimer,
   validateDurationSeconds,
 } from "./lib/timer-utils";
+import { OwnerApiClient } from "./lib/owner-api-client";
 
 const DEBUG = process.env.DEBUG === "1";
 const TIMELINE_DEBUG_SETTING_KEY = "timeline_debug_enabled";
@@ -39,8 +40,6 @@ interface ApiDevice extends DeviceReference {
 }
 
 interface ApiEndpoint {
-  get(path: string): Promise<unknown>;
-  put(path: string, body: unknown): Promise<unknown>;
   on(event: "realtime", listener: (event: string, data?: unknown) => void): this;
   removeListener(event: "realtime", listener: (event: string, data?: unknown) => void): this;
   unregister(): void;
@@ -87,7 +86,7 @@ interface ExportedTimer {
 class TimerApp extends Homey.App {
   private timers: Record<string, Timer> = {};
 
-  private devicesApi: ApiEndpoint | null = null;
+  private ownerApiClient: OwnerApiClient | null = null;
 
   private cloudUrl = "";
 
@@ -125,7 +124,7 @@ class TimerApp extends Homey.App {
       timer.capabilityInstance.destroy();
     }
     await this.flushSaveTimers();
-    this.devicesApi?.unregister();
+    this.ownerApiClient?.clearSession();
     this.log(`${this.id} has stopped.`);
   }
 
@@ -691,8 +690,8 @@ class TimerApp extends Homey.App {
 
     this.log(`Set device ${device.name} [${device.id}] capability ${capabilityId} to ${value}`);
     try {
-      const devicesApi = this.getDevicesApi();
-      await devicesApi.put(
+      await this.getOwnerApiClient().request(
+        "PUT",
         `/device/${encodeURIComponent(device.id)}/capability/${encodeURIComponent(capabilityId)}`,
         {
           value,
@@ -708,16 +707,26 @@ class TimerApp extends Homey.App {
     }
   }
 
-  private getDevicesApi(): ApiEndpoint {
-    if (!this.devicesApi) {
-      this.devicesApi = this.homey.api.getApi("homey:manager:devices") as ApiEndpoint;
+  private getOwnerApiClient(): OwnerApiClient {
+    if (!this.ownerApiClient) {
+      this.ownerApiClient = new OwnerApiClient(async () => {
+        const [token, baseUrl, homeyId] = await Promise.all([
+          this.homey.api.getOwnerApiToken(),
+          this.homey.api.getLocalUrl(),
+          this.homey.cloud.getHomeyId(),
+        ]);
+        return { token, baseUrl, homeyId };
+      });
     }
-    return this.devicesApi;
+    return this.ownerApiClient;
   }
 
   private async getDevice(deviceId: string): Promise<ApiDevice> {
     try {
-      const result = await this.getDevicesApi().get(`/device/${encodeURIComponent(deviceId)}`);
+      const result = await this.getOwnerApiClient().request<unknown>(
+        "GET",
+        `/device/${encodeURIComponent(deviceId)}`,
+      );
       if (!this.isApiDevice(result)) {
         throw new Error("Homey returned an invalid device response.");
       }
@@ -731,7 +740,7 @@ class TimerApp extends Homey.App {
   }
 
   private async getDevicesWithCapabilities(capabilities: string[]): Promise<ApiDevice[]> {
-    const result = await this.getDevicesApi().get("/device");
+    const result = await this.getOwnerApiClient().request<unknown>("GET", "/device");
     const devices = (Array.isArray(result) ? result : Object.values(result as Record<string, unknown>))
       .filter((device): device is ApiDevice => this.isApiDevice(device));
     return devices.filter((device) => capabilities.some((capabilityId) => (

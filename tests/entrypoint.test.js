@@ -22,3 +22,17 @@ test('settings controller loads after the settings page DOM', () => {
   assert.ok(controllerIndex > detailsIndex);
   assert.ok(controllerIndex < bodyEndIndex);
 });
+
+test('settings controller exposes Homey lifecycle and marks the page ready first', () => {
+  const controller = fs.readFileSync(
+    path.join(__dirname, '..', 'settings', 'timerController.js'),
+    'utf8',
+  );
+  const lifecycleIndex = controller.indexOf('function onHomeyReady(Homey)');
+  const readyIndex = controller.indexOf('homeyClient.ready()', lifecycleIndex);
+  const translationIndex = controller.indexOf('translatePage()', lifecycleIndex);
+
+  assert.ok(lifecycleIndex >= 0);
+  assert.ok(readyIndex > lifecycleIndex);
+  assert.ok(readyIndex < translationIndex);
+});
