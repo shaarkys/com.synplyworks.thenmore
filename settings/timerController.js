@@ -1,10 +1,12 @@
 'use strict';
 
-let homeyClient;
-let timers = {};
-let refreshInterval;
+var homeyClient;
+var timers;
+var refreshInterval;
 
-const byId = id => document.getElementById(id);
+function byId(id) {
+  return document.getElementById(id);
+}
 
 function translatePage() {
   const translations = {
@@ -129,8 +131,11 @@ function saveSettings() {
   });
 }
 
+// Homey invokes this global lifecycle callback.
+// eslint-disable-next-line no-unused-vars
 function onHomeyReady(Homey) {
   homeyClient = Homey;
+  timers = {};
   homeyClient.ready();
   try {
     translatePage();
@@ -145,5 +150,3 @@ function onHomeyReady(Homey) {
     homeyClient.alert(error instanceof Error ? error.message : String(error));
   }
 }
-
-window.onHomeyReady = onHomeyReady;

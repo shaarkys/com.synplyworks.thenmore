@@ -36,3 +36,15 @@ test('settings controller exposes Homey lifecycle and marks the page ready first
   assert.ok(readyIndex > lifecycleIndex);
   assert.ok(readyIndex < translationIndex);
 });
+
+test('settings lifecycle dependencies are safe when Homey invokes the hoisted callback early', () => {
+  const controller = fs.readFileSync(
+    path.join(__dirname, '..', 'settings', 'timerController.js'),
+    'utf8',
+  );
+
+  assert.match(controller, /var homeyClient;/);
+  assert.match(controller, /var timers;/);
+  assert.match(controller, /function byId\(id\)/);
+  assert.doesNotMatch(controller, /let homeyClient|const byId/);
+});
