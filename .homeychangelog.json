@@ -63,7 +63,7 @@
     "en": "Timer fixes and Homey API update; improved dim timer behavior; flow cards updated with duration picker and shorter titles"
   },
   "0.8.15": {
-    "en": "Improved timer reliability, restart recovery, long-duration support, settings, and Node.js 22 compatibility.",
-    "nl": "Verbeterde timerbetrouwbaarheid, herstel na herstart, lange timerduren, instellingen en Node.js 22-compatibiliteit."
+    "en": "Improved timer reliability, state restoration and restart recovery; fixed settings and authenticated device control; added long-duration timers and Node.js 22 support.",
+    "nl": "Verbeterde timerbetrouwbaarheid, statusherstel en herstel na herstart; instellingen en geauthenticeerde apparaatbediening gerepareerd; lange timers en Node.js 22-ondersteuning toegevoegd."
   }
 }
