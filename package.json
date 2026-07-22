@@ -1,6 +1,6 @@
 {
   "name": "com.synplyworks.thenmore",
-  "version": "0.8.15",
+  "version": "0.8.16",
   "description": "Homey Timer addon",
   "main": "app.ts",
   "dependencies": {},

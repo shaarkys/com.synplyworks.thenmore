@@ -12,10 +12,22 @@ import {
   validateDurationSeconds,
 } from "./lib/timer-utils";
 import { OwnerApiClient } from "./lib/owner-api-client";
+import {
+  clearInactiveTimerActivity,
+  getDateKey,
+  incrementInvocation,
+  isTimerActivityEvent,
+  pruneTimerActivity,
+  TimerActivityEntry,
+  TimerActivityEvent,
+  TimerActivityUpdate,
+  updateTimerActivity,
+} from "./lib/timer-activity";
 
 const DEBUG = process.env.DEBUG === "1";
 const TIMELINE_DEBUG_SETTING_KEY = "timeline_debug_enabled";
 const TIMERS_SETTING_KEY = "timers";
+const TIMER_ACTIVITY_SETTING_KEY = "timer_activity";
 const SAVE_DEBOUNCE_MS = 2000;
 const EXPIRATION_RETRY_MS = 30_000;
 
@@ -86,6 +98,8 @@ interface ExportedTimer {
 class TimerApp extends Homey.App {
   private timers: Record<string, Timer> = {};
 
+  private timerActivity: Record<string, TimerActivityEntry> = {};
+
   private ownerApiClient: OwnerApiClient | null = null;
 
   private cloudUrl = "";
@@ -104,6 +118,7 @@ class TimerApp extends Homey.App {
 
     await this.initCloudUrl();
     this.initFlowCards();
+    this.restoreTimerActivity();
     await this.restoreTimers();
 
     this.log("Timer App is running...");
@@ -234,6 +249,7 @@ class TimerApp extends Homey.App {
       throw new Error(this.homey.__("errors.invalid_device"));
     }
 
+    this.incrementTimerInvocation(device, action, timeOn);
     try {
       return await this.enqueueDeviceOperation(device.id, async () => this.runScriptLocked(
         device,
@@ -244,6 +260,14 @@ class TimerApp extends Homey.App {
         restore,
       ));
     } catch (error) {
+      this.recordTimerActivity({
+        device,
+        event: "failed",
+        capability: action.capability,
+        value: action.value,
+        duration: Number.isFinite(timeOn) ? timeOn : undefined,
+        message: this.formatError(error),
+      });
       this.error(
         `Unable to start timer for ${device.name} [${device.id}] `
         + `(${action.capability}=${action.value}): ${this.formatError(error)}`,
@@ -316,6 +340,14 @@ class TimerApp extends Homey.App {
         device: device.name,
         seconds: timeOn,
       });
+      this.recordTimerActivity({
+        device: { id: apiDevice.id, name: apiDevice.name, icon: device.icon },
+        event: "skipped",
+        capability: action.capability,
+        value: action.value,
+        duration: timeOn,
+        offTime: currentTimer?.offTime,
+      });
       return true;
     }
 
@@ -330,7 +362,10 @@ class TimerApp extends Homey.App {
         `Cancelling previous timer for device ${device.name} [${device.id}], `
         + `remaining time: ${remainingTime} seconds out of ${currentTimer.timeOn} seconds`,
       );
-      await this.cancelTimerLocked(currentTimer.device, { emitTimeline: false });
+      await this.cancelTimerLocked(currentTimer.device, {
+        emitTimeline: false,
+        activityEvent: null,
+      });
     }
 
     if (action.capability === "dim" && hasOnOff && apiDevice.capabilitiesObj?.onoff.value === false) {
@@ -367,6 +402,15 @@ class TimerApp extends Homey.App {
       `${isReplacingTimer ? "Replaced" : "Set"} timer for device ${device.name} [${device.id}] `
       + `to ${timeOn} seconds (${action.capability}=${action.value})`,
     );
+    this.recordTimerActivity({
+      device: timer.device,
+      event: isReplacingTimer ? "replaced" : "started",
+      capability: timer.capability,
+      value: timer.value,
+      previousValue: timer.restoreState[timer.capability] ?? null,
+      duration: timer.timeOn,
+      offTime: timer.offTime,
+    });
 
     this.homey.api.realtime("timer_started", {
       timers: this.exportTimers(),
@@ -389,26 +433,41 @@ class TimerApp extends Homey.App {
     return true;
   }
 
-  async cancelTimer(device: DeviceReference): Promise<boolean> {
+  async cancelTimer(
+    device: DeviceReference,
+    activityEvent: TimerActivityEvent = "cancelled_flow",
+  ): Promise<boolean> {
     if (!device?.id) {
       throw new Error(this.homey.__("errors.invalid_device"));
     }
 
-    return this.enqueueDeviceOperation(device.id, async () => this.cancelTimerLocked(device));
+    return this.enqueueDeviceOperation(
+      device.id,
+      async () => this.cancelTimerLocked(device, { activityEvent }),
+    );
   }
 
   async cancelTimerById(deviceId: string): Promise<boolean> {
     const timer = this.timers[deviceId];
-    return this.cancelTimer(timer?.device ?? { id: deviceId, name: deviceId });
+    return this.cancelTimer(
+      timer?.device ?? this.timerActivity[deviceId]?.device ?? { id: deviceId, name: deviceId },
+      "cancelled_settings",
+    );
   }
 
   private async cancelTimerLocked(
     device: DeviceReference,
-    options: { emitTimeline?: boolean } = {},
+    options: {
+      emitTimeline?: boolean;
+      activityEvent?: TimerActivityEvent | null;
+    } = {},
   ): Promise<boolean> {
     const timer = this.timers[device.id];
     if (!timer) {
       this.log(`WARNING: No timer to cancel for device ${device.name} [${device.id}]`);
+      if (options.activityEvent) {
+        this.recordTimerActivity({ device, event: options.activityEvent });
+      }
       return true;
     }
 
@@ -417,6 +476,9 @@ class TimerApp extends Homey.App {
     }
     this.log(`Cancelled timer for device ${timer.device.name} [${timer.device.id}]`);
     this.cleanupTimer(timer);
+    if (options.activityEvent !== null) {
+      this.recordTimerActivityFromTimer(timer, options.activityEvent ?? "cancelled_flow");
+    }
 
     if (options.emitTimeline !== false) {
       await this.createTimelineDebugNotification("timeline.cancelled", {
@@ -464,6 +526,7 @@ class TimerApp extends Homey.App {
       const apiDevice = await this.getDevice(deviceId);
       await this.applyTimeoutState(timer, apiDevice);
       this.cleanupTimer(timer);
+      this.recordTimerActivityFromTimer(timer, "completed");
       await this.createTimelineDebugNotification("timeline.expired", {
         device: timer.device.name,
         capability: timer.capability,
@@ -472,6 +535,7 @@ class TimerApp extends Homey.App {
       await this.triggerTimerFinished(timer.device);
     } catch (error) {
       this.error(`Unable to finish timer for ${timer.device.name}: ${this.formatError(error)}`);
+      this.recordTimerActivityFromTimer(timer, "failed", this.formatError(error));
       await this.createTimelineDebugNotification("timeline.failed", {
         device: timer.device.name,
         error: this.formatError(error),
@@ -532,7 +596,7 @@ class TimerApp extends Homey.App {
         `Listener: Device ${device.name} [${device.id}] changed ${capability} `
         + `from timed value ${targetValue} to ${value}, disabling timer`,
       );
-      void this.cancelTimerGeneration(device, generation).catch((error) => {
+      void this.cancelTimerGeneration(device, generation, "cancelled_manual").catch((error) => {
         this.error(`Unable to cancel changed timer for ${device.name}: ${this.formatError(error)}`);
       });
     };
@@ -550,12 +614,16 @@ class TimerApp extends Homey.App {
     };
   }
 
-  private async cancelTimerGeneration(device: DeviceReference, generation: symbol): Promise<boolean> {
+  private async cancelTimerGeneration(
+    device: DeviceReference,
+    generation: symbol,
+    activityEvent: TimerActivityEvent,
+  ): Promise<boolean> {
     return this.enqueueDeviceOperation(device.id, async () => {
       if (this.timers[device.id]?.generation !== generation) {
         return true;
       }
-      return this.cancelTimerLocked(device);
+      return this.cancelTimerLocked(device, { activityEvent });
     });
   }
 
@@ -576,6 +644,14 @@ class TimerApp extends Homey.App {
             `Device ${device.name} [${device.id}] no longer supports settable capability `
             + `${storedTimer.capability}. Removing stored timer.`,
           );
+          this.recordTimerActivity({
+            device: { id: device.id, name: device.name },
+            event: "cancelled_missing",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+          });
           continue;
         }
 
@@ -588,6 +664,15 @@ class TimerApp extends Homey.App {
             `Device ${device.name} [${device.id}] no longer has the stored timer value for `
             + `${storedTimer.capability}. Removing stored timer.`,
           );
+          this.recordTimerActivity({
+            device: { id: device.id, name: device.name },
+            event: "cancelled_manual",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            previousValue: restoreState[storedTimer.capability] ?? null,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+          });
           continue;
         }
 
@@ -618,6 +703,7 @@ class TimerApp extends Homey.App {
           try {
             await this.applyTimeoutState(timer, device);
             this.cleanupTimer(timer);
+            this.recordTimerActivityFromTimer(timer, "completed");
             await this.createTimelineDebugNotification("timeline.offline_expired", {
               device: device.name,
               capability: timer.capability,
@@ -625,6 +711,7 @@ class TimerApp extends Homey.App {
             await this.triggerTimerFinished(timer.device);
           } catch (error) {
             this.error(`Unable to finish restored timer for ${device.name}: ${this.formatError(error)}`);
+            this.recordTimerActivityFromTimer(timer, "failed", this.formatError(error));
             timer.capabilityInstance = this.createCapabilityListener(
               device,
               storedTimer.capability,
@@ -641,15 +728,35 @@ class TimerApp extends Homey.App {
           `Restored timer for device ${device.name} [${device.id}] with `
           + `${(timer.offTime - Date.now()) / 1000} seconds remaining.`,
         );
+        this.recordTimerActivityFromTimer(timer, "restored");
         await this.createTimelineDebugNotification("timeline.restored", {
           device: device.name,
           seconds: Math.round((timer.offTime - Date.now()) / 1000),
         });
       } catch (error) {
         this.error(`Error restoring timer for device ${storedTimer?.deviceId}: ${this.formatError(error)}`);
+        if (storedTimer?.deviceId && typeof storedTimer.deviceId === "string") {
+          this.recordTimerActivity({
+            device: {
+              id: storedTimer.deviceId,
+              name: storedTimer.deviceName ?? storedTimer.deviceId,
+            },
+            event: "failed",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+            message: this.formatError(error),
+          });
+        }
       }
     }
 
+    this.timerActivity = pruneTimerActivity(
+      this.timerActivity,
+      Date.now(),
+      new Set(Object.keys(this.timers)),
+    );
     await this.flushSaveTimers();
   }
 
@@ -764,6 +871,131 @@ class TimerApp extends Homey.App {
     ]));
   }
 
+  exportTimerActivity(): Record<string, TimerActivityEntry & { invocationsToday: number }> {
+    this.timerActivity = pruneTimerActivity(
+      this.timerActivity,
+      Date.now(),
+      new Set(Object.keys(this.timers)),
+    );
+    const currentDate = this.getActivityDateKey();
+    return Object.fromEntries(Object.entries(this.timerActivity).map(([deviceId, entry]) => [
+      deviceId,
+      {
+        ...entry,
+        invocationsToday: entry.counterDate === currentDate ? entry.invocations : 0,
+      },
+    ]));
+  }
+
+  async clearTimerActivity(): Promise<Record<string, TimerActivityEntry & { invocationsToday: number }>> {
+    const activeDeviceIds = new Set(Object.keys(this.timers));
+    this.timerActivity = clearInactiveTimerActivity(this.timerActivity, activeDeviceIds);
+    await this.saveTimers();
+    this.emitTimerActivity();
+    return this.exportTimerActivity();
+  }
+
+  private restoreTimerActivity(): void {
+    const storedActivity: unknown = this.homey.settings.get(TIMER_ACTIVITY_SETTING_KEY);
+    if (!storedActivity || typeof storedActivity !== "object" || Array.isArray(storedActivity)) {
+      return;
+    }
+
+    this.timerActivity = Object.fromEntries(Object.entries(storedActivity).filter(
+      (entry): entry is [string, TimerActivityEntry] => this.isTimerActivityEntry(entry[0], entry[1]),
+    ));
+  }
+
+  private incrementTimerInvocation(
+    device: DeviceReference,
+    action: { capability: string; value: CapabilityValue },
+    duration: number,
+  ): void {
+    const changedAt = Date.now();
+    const previous = this.timerActivity[device.id];
+    this.timerActivity[device.id] = {
+      ...previous,
+      device,
+      event: "requested",
+      changedAt,
+      ...incrementInvocation(previous, this.getActivityDateKey(changedAt)),
+      capability: action.capability,
+      value: action.value,
+      duration: Number.isFinite(duration) ? duration : undefined,
+      offTime: undefined,
+      message: undefined,
+    };
+    this.activityChanged();
+  }
+
+  private recordTimerActivity(
+    input: Omit<TimerActivityUpdate, "changedAt" | "counterDate">,
+  ): void {
+    const changedAt = Date.now();
+    this.timerActivity[input.device.id] = updateTimerActivity(
+      this.timerActivity[input.device.id],
+      {
+        ...input,
+        changedAt,
+        counterDate: this.getActivityDateKey(changedAt),
+        message: input.message,
+      },
+    );
+    this.activityChanged();
+  }
+
+  private recordTimerActivityFromTimer(
+    timer: Timer,
+    event: TimerActivityEvent,
+    message?: string,
+  ): void {
+    this.recordTimerActivity({
+      device: timer.device,
+      event,
+      capability: timer.capability,
+      value: timer.value,
+      previousValue: timer.restoreState[timer.capability] ?? null,
+      duration: timer.timeOn,
+      offTime: timer.offTime,
+      message,
+    });
+  }
+
+  private activityChanged(): void {
+    this.scheduleSaveTimers();
+    this.emitTimerActivity();
+  }
+
+  private emitTimerActivity(): void {
+    this.homey.api.realtime("timer_activity", {
+      activity: this.exportTimerActivity(),
+    });
+  }
+
+  private getActivityDateKey(timestamp = Date.now()): string {
+    return getDateKey(timestamp, this.homey.clock.getTimezone());
+  }
+
+  private isTimerActivityEntry(deviceId: string, value: unknown): value is TimerActivityEntry {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const entry = value as Partial<TimerActivityEntry>;
+    return Boolean(
+      entry.device
+      && entry.device.id === deviceId
+      && typeof entry.device.name === "string"
+      && isTimerActivityEvent(entry.event)
+      && typeof entry.changedAt === "number"
+      && Number.isFinite(entry.changedAt)
+      && typeof entry.counterDate === "string"
+      && /^\d{4}-\d{2}-\d{2}$/.test(entry.counterDate)
+      && typeof entry.invocations === "number"
+      && Number.isInteger(entry.invocations)
+      && entry.invocations >= 0,
+    );
+  }
+
   private scheduleSaveTimers(): void {
     if (this.saveTimersTimeout) {
       clearTimeout(this.saveTimersTimeout);
@@ -796,7 +1028,10 @@ class TimerApp extends Homey.App {
       value: timer.value,
       restoreState: timer.restoreState,
     }));
-    await this.homey.settings.set(TIMERS_SETTING_KEY, storedTimers);
+    await Promise.all([
+      this.homey.settings.set(TIMERS_SETTING_KEY, storedTimers),
+      this.homey.settings.set(TIMER_ACTIVITY_SETTING_KEY, this.timerActivity),
+    ]);
   }
 
   private getDurationSeconds(args: Record<string, unknown>): number {

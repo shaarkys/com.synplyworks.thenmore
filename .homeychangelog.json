@@ -65,5 +65,9 @@
   "0.8.15": {
     "en": "Improved timer reliability, state restoration and restart recovery; fixed settings and authenticated device control; added long-duration timers and Node.js 22 support.",
     "nl": "Verbeterde timerbetrouwbaarheid, statusherstel en herstel na herstart; instellingen en geauthenticeerde apparaatbediening gerepareerd; lange timers en Node.js 22-ondersteuning toegevoegd."
+  },
+  "0.8.16": {
+    "en": "Added restart-safe timer activity history with the latest event per device, daily invocation counters, diagnostics and cleanup; improved settings with responsive activity cards and modal timer details.",
+    "nl": "Herstartbestendige timeractiviteit toegevoegd met de laatste gebeurtenis per apparaat, dagelijkse aanroeptellers, diagnostiek en opschoning; verbeterde instellingen met responsieve activiteitskaarten en timerdetails in een dialoogvenster."
   }
 }
