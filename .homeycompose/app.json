@@ -1,6 +1,6 @@
 {
   "id": "com.synplyworks.thenmore",
-  "version": "0.8.15",
+  "version": "0.8.16",
   "compatibility": ">=12.9.0",
   "sdk": 3,
   "brandColor": "#0000FF",
@@ -65,6 +65,14 @@
     "deleteTimer": {
       "method": "delete",
       "path": "/timers/:id"
+    },
+    "getTimerActivity": {
+      "method": "get",
+      "path": "/timer-activity"
+    },
+    "clearTimerActivity": {
+      "method": "delete",
+      "path": "/timer-activity"
     }
   }
 }

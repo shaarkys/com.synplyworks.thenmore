@@ -48,3 +48,40 @@ test('settings lifecycle dependencies are safe when Homey invokes the hoisted ca
   assert.match(controller, /function byId\(id\)/);
   assert.doesNotMatch(controller, /let homeyClient|const byId/);
 });
+
+test('settings controller references existing page elements', () => {
+  const settingsPage = fs.readFileSync(path.join(__dirname, '..', 'settings', 'index.html'), 'utf8');
+  const controller = fs.readFileSync(
+    path.join(__dirname, '..', 'settings', 'timerController.js'),
+    'utf8',
+  );
+  const directReferences = Array.from(controller.matchAll(/byId\('([^']+)'\)/g), match => match[1]);
+  const translationReferences = Array.from(
+    controller.matchAll(/\s+'([^']+)': 'settings\.[^']+',?/g),
+    match => match[1],
+  );
+
+  for (const elementId of new Set([...directReferences, ...translationReferences])) {
+    assert.match(settingsPage, new RegExp(`id=["']${elementId}["']`), `Missing #${elementId}`);
+  }
+});
+
+test('timer activity API routes remain additive to the existing timer API', () => {
+  const composeManifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '.homeycompose', 'app.json'), 'utf8'),
+  );
+  const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
+
+  assert.deepEqual(composeManifest.api.getTimers, { method: 'get', path: '/timers' });
+  assert.deepEqual(composeManifest.api.deleteTimer, { method: 'delete', path: '/timers/:id' });
+  assert.deepEqual(composeManifest.api.getTimerActivity, {
+    method: 'get',
+    path: '/timer-activity',
+  });
+  assert.deepEqual(composeManifest.api.clearTimerActivity, {
+    method: 'delete',
+    path: '/timer-activity',
+  });
+  assert.match(apiSource, /async getTimerActivity/);
+  assert.match(apiSource, /async clearTimerActivity/);
+});
