@@ -1,0 +1,25 @@
+{
+    "id": "cancel_timer",
+    "title": {
+      "en": "Cancel timer",
+      "nl": "Annuleer timer"
+    },
+    "titleFormatted": {
+      "en": "Cancel timer for [[device]]",
+      "nl": "Annuleer timer voor [[device]]"
+    },
+    "hint": {
+      "en": "Cancel a running timer, preventing the device from turning off",
+      "nl": "Stop een lopende timer, waardoor het apparaat niet uit zal schakelen"
+    },
+    "args": [
+      {
+        "name": "device",
+        "type": "autocomplete",
+        "placeholder": {
+          "en": "The device for which the timer runs",
+          "nl": "Het apparaat waarvoor de timer loopt"
+        }
+      }
+    ]
+  }

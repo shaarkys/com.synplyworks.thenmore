@@ -1,313 +1,1149 @@
-import {HomeyAPI} from "athom-api";
+import inspector from "node:inspector";
 
-const Homey = require('homey');
-const {HomeyAPIApp} = require('homey-api');
+import Homey from "homey";
 
-import Device = HomeyAPI.ManagerDevices.Device;
+import {
+  CapabilityValue,
+  getTimeoutActions,
+  getNextTimeoutDelay,
+  mergeRestoreState,
+  shouldCancelTimer,
+  shouldStartTimer,
+  validateDurationSeconds,
+} from "./lib/timer-utils";
+import { OwnerApiClient } from "./lib/owner-api-client";
+import {
+  clearInactiveTimerActivity,
+  getDateKey,
+  incrementInvocation,
+  isTimerActivityEvent,
+  pruneTimerActivity,
+  TimerActivityEntry,
+  TimerActivityEvent,
+  TimerActivityUpdate,
+  updateTimerActivity,
+} from "./lib/timer-activity";
 
+const DEBUG = process.env.DEBUG === "1";
+const TIMELINE_DEBUG_SETTING_KEY = "timeline_debug_enabled";
+const TIMERS_SETTING_KEY = "timers";
+const TIMER_ACTIVITY_SETTING_KEY = "timer_activity";
+const SAVE_DEBOUNCE_MS = 2000;
+const EXPIRATION_RETRY_MS = 30_000;
 
-const DEBUG = process.env.DEBUG === '1';
-
-
-export default class TimerApp extends Homey.App {
-    onInit() {
-        this.log(`${this.id} is running...(debug mode ${DEBUG ? 'on' : 'off'})`);
-        if (DEBUG) {
-            require('inspector').open(9229, '0.0.0.0');
-        }
-
-        this.log('Timer App is initializing...');
-
-        // remember timeoutIds per device
-        this.timers = [];
-        this.initFlowCards();
-
-        this.log('Timer App is running...');
-    }
-
-    initFlowCards() {
-        this.homey.flow.getActionCard('then_more_on_off')
-            // eslint-disable-next-line no-unused-vars
-            .registerRunListener(async (args: any) => {
-                return this.runScript(
-                    args.device,
-                    {'capability': 'onoff', 'value': true},
-                    args.time_on,
-                    args.ignore_when_on,
-                    args.overrule_longer_timeouts
-                );
-            })
-            .getArgument('device')
-            // eslint-disable-next-line no-unused-vars
-            .registerAutocompleteListener(async (query: string, args: any) => {
-                return this.getOnOffDevices().then(onOffDevices => {
-                    // filter key that have a matching name
-                    return onOffDevices.filter(device => {
-                        return (
-                            device.name.toLowerCase().indexOf(query.toLowerCase()) > -1
-                        );
-                    });
-                });
-            });
-
-        this.homey.flow.getActionCard('then_more_dim')
-            // eslint-disable-next-line no-unused-vars
-            .registerRunListener(async (args: any) => {
-                return this.runScript(
-                    args.device,
-                    {'capability': 'dim', 'value': args.brightness_level},
-                    args.time_on,
-                    args.ignore_when_on,
-                    args.overrule_longer_timeouts,
-                    args.restore
-                );
-            })
-            // TODO: DRY registerAutocompleteListener
-            .getArgument('device')
-            // eslint-disable-next-line no-unused-vars
-            .registerAutocompleteListener(async (query: string, args: any) => {
-                return this.getDimDevices().then(dimDevices => {
-                    // filter devices that have a matching name
-                    return dimDevices.filter(device => {
-                        return (
-                            device.name.toLowerCase().indexOf(query.toLowerCase()) > -1
-                        );
-                    });
-                });
-            });
-
-        this.homey.flow.getActionCard('cancel_timer')
-            // eslint-disable-next-line no-unused-vars
-            .registerRunListener((args: any) => {
-                return this.cancelTimer(
-                    args.device
-                );
-            })
-            .getArgument('device')
-            // eslint-disable-next-line no-unused-vars
-            .registerAutocompleteListener(async (query: string) => {
-                return this.getOnOffDevices().then(onOffDevices => {
-                    return onOffDevices.filter(device => {
-                        return (
-                            device.name.toLowerCase().indexOf(query.toLowerCase()) > -1
-                        );
-                    });
-                });
-            });
-
-        this.homey.flow.getConditionCard('is_timer_running')
-            .registerRunListener(async (args: any) => {
-                return (args.device.id in this.timers)
-            })
-            .getArgument('device')
-            // eslint-disable-next-line no-unused-vars
-            .registerAutocompleteListener(async (query: string) => {
-                return this.getOnOffDevices().then(onOffDevices => {
-                    return onOffDevices.filter(device => {
-                        return (
-                            device.name.toLowerCase().indexOf(query.toLowerCase()) > -1
-                        );
-                    });
-                });
-            });
-    }
-
-    async runScript(device: Device, action: {
-        capability: string;
-        value: any
-    }, timeOn: any, ignoreWhenOn: any, overruleLongerTimeouts: any, restore: string = "no") {
-        const api = await this.getApi();
-        const apiDevice = await api.devices.getDevice({id: device.id});
-        const deviceOnoff = apiDevice.capabilitiesObj.onoff;
-        const timer = this.timers[device.id];
-
-        let oldValue = null;
-        let onOffCapabilityInstance = null;
-
-        // run script when...
-        if (
-            // ... device is off
-            (deviceOnoff.value == false) ||
-            // ... or ignoring current on-state
-            (ignoreWhenOn == "no") ||
-            // ... or when previously activated by this script AND overrule longer enabled, or new timer is later
-            (
-                timer &&
-                ((overruleLongerTimeouts == "yes") || (new Date().getTime() + timeOn * 1000 > timer.offTime))
-            )
-        ) {
-            // first check if there is a reference for a running timer for this device
-            if (timer) {
-                // timer already running, device already on, but disable running timer
-                oldValue = timer.oldValue; // restore oldValue
-                onOffCapabilityInstance = timer.onOffCapabilityInstance; // restore listener instance
-                await this.cancelTimer(device);
-            } else {
-                // if timer is not already running, set device to desired on state
-
-                // if restore is set to true and the device is already on, remember current value (as oldValue)
-                if (restore == "yes" && deviceOnoff.value) {
-                    oldValue = apiDevice.capabilitiesObj[action.capability].value;
-                    this.log(`remember state for ${device.name} [${device.id}] (since on and restore on) oldValue ${oldValue}`);
-                }
-
-                // turn device on, according to chosen action-card/capability
-                await this.setDeviceCapabilityState(device, action.capability, action.value);
-
-                // register listener to clean-up timer when off-state triggered
-                onOffCapabilityInstance = apiDevice.makeCapabilityInstance('onoff', function (this: TimerApp, device: Device, value: boolean) {
-                    if (!value) {
-                        this.log(`Listener: Device ${device.name} [${device.id}] turned off, disable running timer`);
-                        this.cancelTimer(device);
-                    }
-                }.bind(this, device));
-            }
-
-            // (re)set timeout, with following functionality
-            this.log(`set timer for device ${device.name} [${device.id}] to ${timeOn} seconds, oldValue: ${oldValue ? oldValue : false}`);
-            let timeoudId = setTimeout(function (this: TimerApp, device: Device, capabilityId: string, oldValue: any) {
-                this.log(`Timeout for ${device.name} [${device.id}]`);
-
-                const timer = this.timers[device.id];
-                if (timer) {
-                    this.cleanupTimer(device);
-
-                    // turn device off, or restore to previous state
-                    if (!oldValue) {
-                        this.setDeviceCapabilityState(device, 'onoff', false);
-                    } else {
-                        this.setDeviceCapabilityState(device, capabilityId, oldValue);
-                    }
-
-                } else {
-                    this.log(`WARNING: timer timed out, but no timer for device ${device.name} [${device.id}] found! already fired?`);
-                }
-            }.bind(this, device, action.capability, oldValue), timeOn * 1000);
-
-            // remember reference of timer for this device and when it will end
-            this.timers[device.id] = {
-                id: timeoudId,
-                device: device,
-                offTime: new Date().getTime() + timeOn * 1000,
-                capability: action.capability,
-                value: action.value,
-                oldValue: oldValue,
-                onOffCapabilityInstance: onOffCapabilityInstance
-            };
-            // tell the world the timer is (re)started
-            this.homey.api.realtime('timer_started', {
-                timers: this.exportTimers(),
-                device: device,
-                capability: action.capability,
-                value: action.value,
-                oldValue: oldValue
-            });
-        }
-
-        return Promise.resolve(true);
-    }
-
-    cancelTimer(device: Device) {
-        const timer = this.timers[device.id];
-        // if timer is running cancel timer and remove reference
-        if (timer) {
-            clearTimeout(timer.id);
-            this.log(`Cancelled timer for device ${device.name} [${device.id}]`);
-
-            this.cleanupTimer(device);
-        } else {
-            this.log(`WARNING: No timer to Cancel for device ${device.name} [${device.id}]`);
-        }
-
-        return Promise.resolve(true);
-    }
-
-    cleanupTimer(device: Device) {
-        const timer = this.timers[device.id];
-        if (timer) {
-            // clean up listener for off-state
-            timer.onOffCapabilityInstance.destroy();
-            // remove reference of timer for this device
-            delete this.timers[device.id];
-            // emit event to signal settings page the timer can be removed
-            this.homey.api.realtime('timer_deleted', {timers: this.exportTimers(), device: device});
-        } else {
-            this.log(`WARNING: No timer to cleanup for device ${device.name} [${device.id}]`);
-        }
-    }
-
-    // set a device to a certain state
-    async setDeviceCapabilityState(device: Device, capabilityId: string, value: any) {
-        this.log(`set device ${device.name} [${device.id}] capability ${capabilityId} to ${value}`);
-
-        const api = await this.getApi();
-        await api.devices.setCapabilityValue({deviceId: device.id, capabilityId: capabilityId, value: value});
-
-        // update cache of apiDevice.capabilitiesObj
-        const apiDevice = await api.devices.getDevice({id: device.id});
-        apiDevice.capabilitiesObj[capabilityId].value = value;
-    }
-
-    // Get API control function
-    getApi(): typeof HomeyAPIApp {
-        if (!this.api) {
-            this.api = new HomeyAPIApp({
-                homey: this.homey,
-            });
-        }
-
-        return this.api;
-    }
-
-    // Get Timers
-    exportTimers() {
-        let data: any = {};
-
-        // clone timers, and remove the timeout-id
-        for (let key in this.timers) {
-            data[key] = Object.assign({}, this.timers[key]);
-            delete data[key].id; // remove timeout id which cannot be exported
-        }
-
-        return data;
-    }
-
-    // Get all devices function for API
-    async getAllDevices(): Promise<Device[]> {
-        const api = await this.getApi();
-
-        return Object.values(await api.devices.getDevices());
-    }
-
-    /**
-     * load all devices from Homey
-     * and filter all without on/off capability
-     */
-    async getOnOffDevices(): Promise<Device[]> {
-        return (await this.getAllDevices()).filter((device: Device) => {
-            return (
-                device.capabilitiesObj !== null &&
-                'onoff' in device.capabilitiesObj &&
-                // @ts-ignore
-                device.capabilitiesObj.onoff.setable
-            );
-        });
-    }
-
-    /**
-     * load all devices from Homey
-     * and filter all without dim capability
-     */
-    async getDimDevices() {
-        return (await this.getAllDevices()).filter(device => {
-            return (
-                device.capabilitiesObj !== null &&
-                'dim' in device.capabilitiesObj &&
-                // @ts-ignore
-                device.capabilitiesObj.dim.setable
-            );
-        });
-    }
+interface DeviceReference {
+  id: string;
+  name: string;
+  icon?: string;
 }
 
-module.exports = TimerApp;
+interface ApiCapability {
+  value: CapabilityValue;
+  setable?: boolean;
+}
+
+interface CapabilityInstance {
+  destroy(): void;
+}
+
+interface ApiDevice extends DeviceReference {
+  capabilitiesObj?: Record<string, ApiCapability>;
+  iconObj?: { url?: string } | null;
+}
+
+interface ApiEndpoint {
+  on(event: "realtime", listener: (event: string, data?: unknown) => void): this;
+  removeListener(event: "realtime", listener: (event: string, data?: unknown) => void): this;
+  unregister(): void;
+}
+
+type RestoreState = Record<string, CapabilityValue>;
+
+interface Timer {
+  id: NodeJS.Timeout | null;
+  generation: symbol;
+  device: DeviceReference;
+  timeOn: number;
+  startTime: number;
+  offTime: number;
+  capability: string;
+  value: CapabilityValue;
+  restoreState: RestoreState;
+  capabilityInstance: CapabilityInstance;
+}
+
+interface StoredTimer {
+  deviceId: string;
+  deviceName?: string;
+  timeOn: number;
+  startTime: number;
+  offTime: number;
+  capability: string;
+  value: CapabilityValue;
+  restoreState?: RestoreState;
+  oldValue?: CapabilityValue;
+}
+
+interface ExportedTimer {
+  device: DeviceReference;
+  timeOn: number;
+  startTime: number;
+  offTime: number;
+  capability: string;
+  value: CapabilityValue;
+  oldValue: CapabilityValue;
+  restoreState: RestoreState;
+}
+
+class TimerApp extends Homey.App {
+  private timers: Record<string, Timer> = {};
+
+  private timerActivity: Record<string, TimerActivityEntry> = {};
+
+  private ownerApiClient: OwnerApiClient | null = null;
+
+  private cloudUrl = "";
+
+  private timerFinishedTrigger: Homey.FlowCardTrigger | null = null;
+
+  private saveTimersTimeout: NodeJS.Timeout | null = null;
+
+  private deviceOperations = new Map<string, Promise<unknown>>();
+
+  async onInit(): Promise<void> {
+    this.log(`${this.id} is running...(debug mode ${DEBUG ? "on" : "off"})`);
+    if (DEBUG) {
+      inspector.open(9229, "127.0.0.1");
+    }
+
+    await this.initCloudUrl();
+    this.initFlowCards();
+    this.restoreTimerActivity();
+    await this.restoreTimers();
+
+    this.log("Timer App is running...");
+  }
+
+  async onUninit(): Promise<void> {
+    for (const timer of Object.values(this.timers)) {
+      if (timer.id) {
+        clearTimeout(timer.id);
+      }
+    }
+
+    await Promise.allSettled(this.deviceOperations.values());
+    for (const timer of Object.values(this.timers)) {
+      if (timer.id) {
+        clearTimeout(timer.id);
+      }
+      timer.capabilityInstance.destroy();
+    }
+    await this.flushSaveTimers();
+    this.ownerApiClient?.clearSession();
+    this.log(`${this.id} has stopped.`);
+  }
+
+  private async initCloudUrl(): Promise<void> {
+    try {
+      const image = await this.homey.images.createImage();
+      try {
+        const cloudUrl = (image as unknown as { cloudUrl?: string }).cloudUrl;
+        this.cloudUrl = cloudUrl?.includes("/api/") ? cloudUrl.split("/api/")[0] : "";
+      } finally {
+        await image.unregister();
+      }
+    } catch (error) {
+      this.error(`Unable to load device icons for Flow autocomplete: ${this.formatError(error)}`);
+    }
+  }
+
+  private initFlowCards(): void {
+    const thenMoreOnOff = this.homey.flow.getActionCard("then_more_on_off");
+    thenMoreOnOff.registerRunListener(async (args: Record<string, unknown>) => this.runScript(
+      args.device as DeviceReference,
+      { capability: "onoff", value: true },
+      this.getDurationSeconds(args),
+      String(args.ignore_when_on),
+      String(args.overrule_longer_timeouts),
+    ));
+    this.registerDeviceAutocompleteListener(thenMoreOnOff, "onoff");
+
+    const thenMoreOffOn = this.homey.flow.getActionCard("then_more_off_on");
+    thenMoreOffOn.registerRunListener(async (args: Record<string, unknown>) => this.runScript(
+      args.device as DeviceReference,
+      { capability: "onoff", value: false },
+      this.getDurationSeconds(args),
+      String(args.ignore_when_off),
+      String(args.overrule_longer_timeouts),
+      "yes",
+    ));
+    this.registerDeviceAutocompleteListener(thenMoreOffOn, "onoff");
+
+    const thenMoreDim = this.homey.flow.getActionCard("then_more_dim");
+    thenMoreDim.registerRunListener(async (args: Record<string, unknown>) => this.runScript(
+      args.device as DeviceReference,
+      { capability: "dim", value: args.brightness_level as number },
+      this.getDurationSeconds(args),
+      String(args.ignore_when_on),
+      String(args.overrule_longer_timeouts),
+      String(args.restore),
+    ));
+    this.registerDeviceAutocompleteListener(thenMoreDim, "dim");
+
+    const cancelTimer = this.homey.flow.getActionCard("cancel_timer");
+    cancelTimer.registerRunListener(async (args: Record<string, unknown>) => (
+      this.cancelTimer(args.device as DeviceReference)
+    ));
+    this.registerDeviceAutocompleteListener(cancelTimer, "timer");
+
+    this.timerFinishedTrigger = this.homey.flow.getTriggerCard("timer_finished");
+    this.timerFinishedTrigger.registerRunListener((args: Record<string, unknown>, state: Record<string, unknown>) => {
+      const device = args.device as DeviceReference | undefined;
+      return device?.id === state.deviceId;
+    });
+    this.registerDeviceAutocompleteListener(this.timerFinishedTrigger, "timer");
+
+    const isTimerRunning = this.homey.flow.getConditionCard("is_timer_running");
+    isTimerRunning.registerRunListener((args: Record<string, unknown>) => {
+      const device = args.device as DeviceReference;
+      return Boolean(device?.id && this.timers[device.id]);
+    });
+    this.registerDeviceAutocompleteListener(isTimerRunning, "timer");
+  }
+
+  private registerDeviceAutocompleteListener(
+    flowCard: Homey.FlowCardAction | Homey.FlowCardCondition | Homey.FlowCardTrigger,
+    capabilityType: "onoff" | "dim" | "timer",
+  ): void {
+    flowCard.registerArgumentAutocompleteListener("device", async (query: string) => {
+      const devices = capabilityType === "onoff"
+        ? await this.getDevicesWithCapabilities(["onoff"])
+        : capabilityType === "dim"
+          ? await this.getDevicesWithCapabilities(["dim"])
+          : await this.getDevicesWithCapabilities(["onoff", "dim"]);
+
+      return devices
+        .map((device) => {
+          const relativeIconUrl = device.iconObj?.url;
+          return {
+            id: device.id,
+            name: device.name.trim(),
+            icon: relativeIconUrl && this.cloudUrl ? `${this.cloudUrl}${relativeIconUrl}` : undefined,
+          };
+        })
+        .filter((device) => device.name.length > 0)
+        .filter((device) => device.name.toLowerCase().includes(query.toLowerCase()))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    });
+  }
+
+  async runScript(
+    device: DeviceReference,
+    action: { capability: string; value: CapabilityValue },
+    timeOn: number,
+    ignoreWhenOn: string,
+    overruleLongerTimeouts: string,
+    restore = "no",
+  ): Promise<boolean> {
+    if (!device?.id) {
+      throw new Error(this.homey.__("errors.invalid_device"));
+    }
+
+    this.incrementTimerInvocation(device, action, timeOn);
+    try {
+      return await this.enqueueDeviceOperation(device.id, async () => this.runScriptLocked(
+        device,
+        action,
+        timeOn,
+        ignoreWhenOn,
+        overruleLongerTimeouts,
+        restore,
+      ));
+    } catch (error) {
+      this.recordTimerActivity({
+        device,
+        event: "failed",
+        capability: action.capability,
+        value: action.value,
+        duration: Number.isFinite(timeOn) ? timeOn : undefined,
+        message: this.formatError(error),
+      });
+      this.error(
+        `Unable to start timer for ${device.name} [${device.id}] `
+        + `(${action.capability}=${action.value}): ${this.formatError(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  private async runScriptLocked(
+    device: DeviceReference,
+    action: { capability: string; value: CapabilityValue },
+    timeOnInput: number,
+    ignoreWhenOn: string,
+    overruleLongerTimeouts: string,
+    restore: string,
+  ): Promise<boolean> {
+    let timeOn: number;
+    try {
+      timeOn = validateDurationSeconds(timeOnInput);
+    } catch (error) {
+      throw new Error(this.homey.__("errors.invalid_duration"), { cause: error });
+    }
+
+    if (action.value === null) {
+      throw new Error(this.homey.__("errors.invalid_capability_value"));
+    }
+
+    const apiDevice = await this.getDevice(device.id);
+    const deviceCapability = apiDevice.capabilitiesObj?.[action.capability];
+    if (!deviceCapability?.setable) {
+      throw new Error(this.homey.__("errors.unsupported_capability", {
+        device: device.name,
+        capability: action.capability,
+      }));
+    }
+
+    const currentTimer = this.timers[device.id];
+    const hasOnOff = Boolean(apiDevice.capabilitiesObj?.onoff);
+    const isCurrentlyOff = hasOnOff
+      ? apiDevice.capabilitiesObj?.onoff.value === false
+      : action.capability === "dim"
+        ? deviceCapability.value === 0
+        : deviceCapability.value === false;
+    const isAlreadyInTimedState = action.capability === "onoff"
+      ? deviceCapability.value === action.value
+      : !isCurrentlyOff;
+    const requestedOffTime = Date.now() + timeOn * 1000;
+    const sameTarget = Boolean(
+      currentTimer
+      && currentTimer.capability === action.capability
+      && currentTimer.value === action.value,
+    );
+
+    const shouldStart = shouldStartTimer({
+      hasTimer: Boolean(currentTimer),
+      sameTarget,
+      isAlreadyInTimedState,
+      ignoreCurrentState: ignoreWhenOn === "no",
+      overrideLongerTimer: overruleLongerTimeouts === "yes",
+      currentOffTime: currentTimer?.offTime,
+      requestedOffTime,
+    });
+
+    if (!shouldStart) {
+      this.log(
+        `Skipped timer for device ${device.name} [${device.id}] because the current timer `
+        + `or device state takes precedence (${timeOn} seconds requested)`,
+      );
+      await this.createTimelineDebugNotification("timeline.skipped", {
+        device: device.name,
+        seconds: timeOn,
+      });
+      this.recordTimerActivity({
+        device: { id: apiDevice.id, name: apiDevice.name, icon: device.icon },
+        event: "skipped",
+        capability: action.capability,
+        value: action.value,
+        duration: timeOn,
+        offTime: currentTimer?.offTime,
+      });
+      return true;
+    }
+
+    const restoreState = restore === "yes"
+      ? this.captureRestoreState(apiDevice, action.capability, currentTimer?.restoreState)
+      : {};
+    const isReplacingTimer = Boolean(currentTimer);
+
+    if (currentTimer) {
+      const remainingTime = Math.max(0, Math.round((currentTimer.offTime - Date.now()) / 1000));
+      this.log(
+        `Cancelling previous timer for device ${device.name} [${device.id}], `
+        + `remaining time: ${remainingTime} seconds out of ${currentTimer.timeOn} seconds`,
+      );
+      await this.cancelTimerLocked(currentTimer.device, {
+        emitTimeline: false,
+        activityEvent: null,
+      });
+    }
+
+    if (action.capability === "dim" && hasOnOff && apiDevice.capabilitiesObj?.onoff.value === false) {
+      await this.setDeviceCapabilityState(device, "onoff", true, apiDevice);
+    }
+    if (deviceCapability.value !== action.value) {
+      await this.setDeviceCapabilityState(device, action.capability, action.value, apiDevice);
+    }
+
+    const generation = Symbol(device.id);
+    const capabilityInstance = this.createCapabilityListener(
+      apiDevice,
+      action.capability,
+      action.value,
+      generation,
+    );
+    const startTime = Date.now();
+    const timer: Timer = {
+      id: null,
+      generation,
+      device: { id: apiDevice.id, name: apiDevice.name, icon: device.icon },
+      timeOn,
+      startTime,
+      offTime: startTime + timeOn * 1000,
+      capability: action.capability,
+      value: action.value,
+      restoreState,
+      capabilityInstance,
+    };
+    this.timers[device.id] = timer;
+    this.armTimer(timer);
+    this.scheduleSaveTimers();
+    this.log(
+      `${isReplacingTimer ? "Replaced" : "Set"} timer for device ${device.name} [${device.id}] `
+      + `to ${timeOn} seconds (${action.capability}=${action.value})`,
+    );
+    this.recordTimerActivity({
+      device: timer.device,
+      event: isReplacingTimer ? "replaced" : "started",
+      capability: timer.capability,
+      value: timer.value,
+      previousValue: timer.restoreState[timer.capability] ?? null,
+      duration: timer.timeOn,
+      offTime: timer.offTime,
+    });
+
+    this.homey.api.realtime("timer_started", {
+      timers: this.exportTimers(),
+      device: timer.device,
+      capability: action.capability,
+      value: action.value,
+      oldValue: restoreState[action.capability] ?? null,
+    });
+
+    await this.createTimelineDebugNotification(
+      isReplacingTimer ? "timeline.replaced" : "timeline.started",
+      {
+        device: device.name,
+        seconds: timeOn,
+        capability: action.capability,
+        value: action.value,
+      },
+    );
+
+    return true;
+  }
+
+  async cancelTimer(
+    device: DeviceReference,
+    activityEvent: TimerActivityEvent = "cancelled_flow",
+  ): Promise<boolean> {
+    if (!device?.id) {
+      throw new Error(this.homey.__("errors.invalid_device"));
+    }
+
+    return this.enqueueDeviceOperation(
+      device.id,
+      async () => this.cancelTimerLocked(device, { activityEvent }),
+    );
+  }
+
+  async cancelTimerById(deviceId: string): Promise<boolean> {
+    const timer = this.timers[deviceId];
+    return this.cancelTimer(
+      timer?.device ?? this.timerActivity[deviceId]?.device ?? { id: deviceId, name: deviceId },
+      "cancelled_settings",
+    );
+  }
+
+  private async cancelTimerLocked(
+    device: DeviceReference,
+    options: {
+      emitTimeline?: boolean;
+      activityEvent?: TimerActivityEvent | null;
+    } = {},
+  ): Promise<boolean> {
+    const timer = this.timers[device.id];
+    if (!timer) {
+      this.log(`WARNING: No timer to cancel for device ${device.name} [${device.id}]`);
+      if (options.activityEvent) {
+        this.recordTimerActivity({ device, event: options.activityEvent });
+      }
+      return true;
+    }
+
+    if (timer.id) {
+      clearTimeout(timer.id);
+    }
+    this.log(`Cancelled timer for device ${timer.device.name} [${timer.device.id}]`);
+    this.cleanupTimer(timer);
+    if (options.activityEvent !== null) {
+      this.recordTimerActivityFromTimer(timer, options.activityEvent ?? "cancelled_flow");
+    }
+
+    if (options.emitTimeline !== false) {
+      await this.createTimelineDebugNotification("timeline.cancelled", {
+        device: timer.device.name,
+      });
+    }
+
+    return true;
+  }
+
+  private cleanupTimer(timer: Timer): void {
+    timer.capabilityInstance.destroy();
+    delete this.timers[timer.device.id];
+    this.scheduleSaveTimers();
+    this.homey.api.realtime("timer_deleted", {
+      timers: this.exportTimers(),
+      device: timer.device,
+    });
+  }
+
+  private armTimer(timer: Timer, delay?: number): void {
+    const timeoutDelay = delay ?? getNextTimeoutDelay(timer.offTime);
+    const timeoutId = setTimeout(() => {
+      void this.enqueueDeviceOperation(timer.device.id, async () => {
+        await this.handleTimerDeadline(timer.device.id, timeoutId);
+      }).catch((error) => {
+        this.error(`Timer handler failed for ${timer.device.name}: ${this.formatError(error)}`);
+      });
+    }, timeoutDelay);
+    timer.id = timeoutId;
+  }
+
+  private async handleTimerDeadline(deviceId: string, timeoutId: NodeJS.Timeout): Promise<void> {
+    const timer = this.timers[deviceId];
+    if (!timer || timer.id !== timeoutId) {
+      return;
+    }
+
+    if (Date.now() < timer.offTime) {
+      this.armTimer(timer);
+      return;
+    }
+
+    try {
+      const apiDevice = await this.getDevice(deviceId);
+      await this.applyTimeoutState(timer, apiDevice);
+      this.cleanupTimer(timer);
+      this.recordTimerActivityFromTimer(timer, "completed");
+      await this.createTimelineDebugNotification("timeline.expired", {
+        device: timer.device.name,
+        capability: timer.capability,
+        value: this.describeTimeoutValue(timer),
+      });
+      await this.triggerTimerFinished(timer.device);
+    } catch (error) {
+      this.error(`Unable to finish timer for ${timer.device.name}: ${this.formatError(error)}`);
+      this.recordTimerActivityFromTimer(timer, "failed", this.formatError(error));
+      await this.createTimelineDebugNotification("timeline.failed", {
+        device: timer.device.name,
+        error: this.formatError(error),
+      });
+      this.armTimer(timer, EXPIRATION_RETRY_MS);
+      this.scheduleSaveTimers();
+    }
+  }
+
+  private async applyTimeoutState(timer: Timer, apiDevice: ApiDevice): Promise<void> {
+    const actions = getTimeoutActions(
+      timer.capability,
+      timer.restoreState,
+      new Set(Object.keys(apiDevice.capabilitiesObj ?? {})),
+    );
+    for (const action of actions) {
+      await this.setDeviceCapabilityState(timer.device, action.capability, action.value, apiDevice);
+    }
+  }
+
+  private captureRestoreState(
+    apiDevice: ApiDevice,
+    capability: string,
+    originalRestoreState: RestoreState = {},
+  ): RestoreState {
+    const restoreState: RestoreState = {};
+    const capabilityValue = apiDevice.capabilitiesObj?.[capability]?.value;
+    if (capabilityValue !== undefined) {
+      restoreState[capability] = capabilityValue;
+    }
+
+    if (capability === "dim" && apiDevice.capabilitiesObj?.onoff) {
+      restoreState.onoff = apiDevice.capabilitiesObj.onoff.value;
+    }
+
+    return mergeRestoreState(restoreState, originalRestoreState);
+  }
+
+  private createCapabilityListener(
+    device: ApiDevice,
+    capability: string,
+    targetValue: CapabilityValue,
+    generation: symbol,
+  ): CapabilityInstance {
+    const deviceApi = this.homey.api.getApi(`homey:device:${device.id}`) as ApiEndpoint;
+    let destroyed = false;
+    const onRealtime = (event: string, data?: unknown): void => {
+      if (event !== "capability" || !this.isCapabilityEvent(data) || data.capabilityId !== capability) {
+        return;
+      }
+
+      const value = data.value;
+      if (!shouldCancelTimer(targetValue, value)) {
+        return;
+      }
+
+      this.log(
+        `Listener: Device ${device.name} [${device.id}] changed ${capability} `
+        + `from timed value ${targetValue} to ${value}, disabling timer`,
+      );
+      void this.cancelTimerGeneration(device, generation, "cancelled_manual").catch((error) => {
+        this.error(`Unable to cancel changed timer for ${device.name}: ${this.formatError(error)}`);
+      });
+    };
+    deviceApi.on("realtime", onRealtime);
+
+    return {
+      destroy: () => {
+        if (destroyed) {
+          return;
+        }
+        destroyed = true;
+        deviceApi.removeListener("realtime", onRealtime);
+        deviceApi.unregister();
+      },
+    };
+  }
+
+  private async cancelTimerGeneration(
+    device: DeviceReference,
+    generation: symbol,
+    activityEvent: TimerActivityEvent,
+  ): Promise<boolean> {
+    return this.enqueueDeviceOperation(device.id, async () => {
+      if (this.timers[device.id]?.generation !== generation) {
+        return true;
+      }
+      return this.cancelTimerLocked(device, { activityEvent });
+    });
+  }
+
+  private async restoreTimers(): Promise<void> {
+    const rawStoredTimers: unknown = this.homey.settings.get(TIMERS_SETTING_KEY);
+    const storedTimers = Array.isArray(rawStoredTimers) ? rawStoredTimers as StoredTimer[] : [];
+
+    for (const storedTimer of storedTimers) {
+      try {
+        if (!this.isStoredTimerValid(storedTimer)) {
+          this.error(`Skipping invalid stored timer: ${JSON.stringify(storedTimer)}`);
+          continue;
+        }
+
+        const device = await this.getDevice(storedTimer.deviceId);
+        if (!device.capabilitiesObj?.[storedTimer.capability]?.setable) {
+          this.error(
+            `Device ${device.name} [${device.id}] no longer supports settable capability `
+            + `${storedTimer.capability}. Removing stored timer.`,
+          );
+          this.recordTimerActivity({
+            device: { id: device.id, name: device.name },
+            event: "cancelled_missing",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+          });
+          continue;
+        }
+
+        const restoreState = storedTimer.restoreState
+          ?? (storedTimer.oldValue !== null && storedTimer.oldValue !== undefined
+            ? { [storedTimer.capability]: storedTimer.oldValue }
+            : {});
+        if (device.capabilitiesObj[storedTimer.capability].value !== storedTimer.value) {
+          this.log(
+            `Device ${device.name} [${device.id}] no longer has the stored timer value for `
+            + `${storedTimer.capability}. Removing stored timer.`,
+          );
+          this.recordTimerActivity({
+            device: { id: device.id, name: device.name },
+            event: "cancelled_manual",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            previousValue: restoreState[storedTimer.capability] ?? null,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+          });
+          continue;
+        }
+
+        const generation = Symbol(device.id);
+        const isExpired = storedTimer.offTime <= Date.now();
+        const timer: Timer = {
+          id: null,
+          generation,
+          device: { id: device.id, name: device.name },
+          timeOn: storedTimer.timeOn,
+          startTime: storedTimer.startTime,
+          offTime: storedTimer.offTime,
+          capability: storedTimer.capability,
+          value: storedTimer.value,
+          restoreState,
+          capabilityInstance: isExpired
+            ? { destroy: () => undefined }
+            : this.createCapabilityListener(
+              device,
+              storedTimer.capability,
+              storedTimer.value,
+              generation,
+            ),
+        };
+        this.timers[device.id] = timer;
+
+        if (isExpired) {
+          try {
+            await this.applyTimeoutState(timer, device);
+            this.cleanupTimer(timer);
+            this.recordTimerActivityFromTimer(timer, "completed");
+            await this.createTimelineDebugNotification("timeline.offline_expired", {
+              device: device.name,
+              capability: timer.capability,
+            });
+            await this.triggerTimerFinished(timer.device);
+          } catch (error) {
+            this.error(`Unable to finish restored timer for ${device.name}: ${this.formatError(error)}`);
+            this.recordTimerActivityFromTimer(timer, "failed", this.formatError(error));
+            timer.capabilityInstance = this.createCapabilityListener(
+              device,
+              storedTimer.capability,
+              storedTimer.value,
+              generation,
+            );
+            this.armTimer(timer, EXPIRATION_RETRY_MS);
+          }
+          continue;
+        }
+
+        this.armTimer(timer);
+        this.log(
+          `Restored timer for device ${device.name} [${device.id}] with `
+          + `${(timer.offTime - Date.now()) / 1000} seconds remaining.`,
+        );
+        this.recordTimerActivityFromTimer(timer, "restored");
+        await this.createTimelineDebugNotification("timeline.restored", {
+          device: device.name,
+          seconds: Math.round((timer.offTime - Date.now()) / 1000),
+        });
+      } catch (error) {
+        this.error(`Error restoring timer for device ${storedTimer?.deviceId}: ${this.formatError(error)}`);
+        if (storedTimer?.deviceId && typeof storedTimer.deviceId === "string") {
+          this.recordTimerActivity({
+            device: {
+              id: storedTimer.deviceId,
+              name: storedTimer.deviceName ?? storedTimer.deviceId,
+            },
+            event: "failed",
+            capability: storedTimer.capability,
+            value: storedTimer.value,
+            duration: storedTimer.timeOn,
+            offTime: storedTimer.offTime,
+            message: this.formatError(error),
+          });
+        }
+      }
+    }
+
+    this.timerActivity = pruneTimerActivity(
+      this.timerActivity,
+      Date.now(),
+      new Set(Object.keys(this.timers)),
+    );
+    await this.flushSaveTimers();
+  }
+
+  private isStoredTimerValid(timer: StoredTimer): boolean {
+    return Boolean(
+      timer
+      && typeof timer.deviceId === "string"
+      && typeof timer.capability === "string"
+      && typeof timer.timeOn === "number"
+      && Number.isFinite(timer.timeOn)
+      && timer.timeOn > 0
+      && typeof timer.startTime === "number"
+      && Number.isFinite(timer.startTime)
+      && typeof timer.offTime === "number"
+      && Number.isFinite(timer.offTime)
+      && this.isCapabilityValue(timer.value)
+      && (timer.restoreState === undefined || (
+        timer.restoreState !== null
+        && typeof timer.restoreState === "object"
+        && Object.values(timer.restoreState).every((value) => this.isCapabilityValue(value))
+      )),
+    );
+  }
+
+  private async setDeviceCapabilityState(
+    device: DeviceReference,
+    capabilityId: string,
+    value: Exclude<CapabilityValue, null>,
+    existingDevice?: ApiDevice,
+  ): Promise<void> {
+    const apiDevice = existingDevice ?? await this.getDevice(device.id);
+    if (!apiDevice.capabilitiesObj?.[capabilityId]?.setable) {
+      throw new Error(this.homey.__("errors.unsupported_capability", {
+        device: device.name,
+        capability: capabilityId,
+      }));
+    }
+
+    this.log(`Set device ${device.name} [${device.id}] capability ${capabilityId} to ${value}`);
+    try {
+      await this.getOwnerApiClient().request(
+        "PUT",
+        `/device/${encodeURIComponent(device.id)}/capability/${encodeURIComponent(capabilityId)}`,
+        {
+          value,
+        },
+      );
+      apiDevice.capabilitiesObj[capabilityId].value = value;
+    } catch (error) {
+      throw new Error(this.homey.__("errors.capability_update_failed", {
+        device: device.name,
+        capability: capabilityId,
+        error: this.formatError(error),
+      }), { cause: error });
+    }
+  }
+
+  private getOwnerApiClient(): OwnerApiClient {
+    if (!this.ownerApiClient) {
+      this.ownerApiClient = new OwnerApiClient(async () => {
+        const [token, baseUrl, homeyId] = await Promise.all([
+          this.homey.api.getOwnerApiToken(),
+          this.homey.api.getLocalUrl(),
+          this.homey.cloud.getHomeyId(),
+        ]);
+        return { token, baseUrl, homeyId };
+      });
+    }
+    return this.ownerApiClient;
+  }
+
+  private async getDevice(deviceId: string): Promise<ApiDevice> {
+    try {
+      const result = await this.getOwnerApiClient().request<unknown>(
+        "GET",
+        `/device/${encodeURIComponent(deviceId)}`,
+      );
+      if (!this.isApiDevice(result)) {
+        throw new Error("Homey returned an invalid device response.");
+      }
+      return result;
+    } catch (error) {
+      throw new Error(this.homey.__("errors.device_load_failed", {
+        device: deviceId,
+        error: this.formatError(error),
+      }), { cause: error });
+    }
+  }
+
+  private async getDevicesWithCapabilities(capabilities: string[]): Promise<ApiDevice[]> {
+    const result = await this.getOwnerApiClient().request<unknown>("GET", "/device");
+    const devices = (Array.isArray(result) ? result : Object.values(result as Record<string, unknown>))
+      .filter((device): device is ApiDevice => this.isApiDevice(device));
+    return devices.filter((device) => capabilities.some((capabilityId) => (
+      device.capabilitiesObj?.[capabilityId]?.setable === true
+    )));
+  }
+
+  exportTimers(): Record<string, ExportedTimer> {
+    return Object.fromEntries(Object.values(this.timers).map((timer) => [
+      timer.device.id,
+      {
+        device: timer.device,
+        timeOn: timer.timeOn,
+        startTime: timer.startTime,
+        offTime: timer.offTime,
+        capability: timer.capability,
+        value: timer.value,
+        oldValue: timer.restoreState[timer.capability] ?? null,
+        restoreState: timer.restoreState,
+      },
+    ]));
+  }
+
+  exportTimerActivity(): Record<string, TimerActivityEntry & { invocationsToday: number }> {
+    this.timerActivity = pruneTimerActivity(
+      this.timerActivity,
+      Date.now(),
+      new Set(Object.keys(this.timers)),
+    );
+    const currentDate = this.getActivityDateKey();
+    return Object.fromEntries(Object.entries(this.timerActivity).map(([deviceId, entry]) => [
+      deviceId,
+      {
+        ...entry,
+        invocationsToday: entry.counterDate === currentDate ? entry.invocations : 0,
+      },
+    ]));
+  }
+
+  async clearTimerActivity(): Promise<Record<string, TimerActivityEntry & { invocationsToday: number }>> {
+    const activeDeviceIds = new Set(Object.keys(this.timers));
+    this.timerActivity = clearInactiveTimerActivity(this.timerActivity, activeDeviceIds);
+    await this.saveTimers();
+    this.emitTimerActivity();
+    return this.exportTimerActivity();
+  }
+
+  private restoreTimerActivity(): void {
+    const storedActivity: unknown = this.homey.settings.get(TIMER_ACTIVITY_SETTING_KEY);
+    if (!storedActivity || typeof storedActivity !== "object" || Array.isArray(storedActivity)) {
+      return;
+    }
+
+    this.timerActivity = Object.fromEntries(Object.entries(storedActivity).filter(
+      (entry): entry is [string, TimerActivityEntry] => this.isTimerActivityEntry(entry[0], entry[1]),
+    ));
+  }
+
+  private incrementTimerInvocation(
+    device: DeviceReference,
+    action: { capability: string; value: CapabilityValue },
+    duration: number,
+  ): void {
+    const changedAt = Date.now();
+    const previous = this.timerActivity[device.id];
+    this.timerActivity[device.id] = {
+      ...previous,
+      device,
+      event: "requested",
+      changedAt,
+      ...incrementInvocation(previous, this.getActivityDateKey(changedAt)),
+      capability: action.capability,
+      value: action.value,
+      duration: Number.isFinite(duration) ? duration : undefined,
+      offTime: undefined,
+      message: undefined,
+    };
+    this.activityChanged();
+  }
+
+  private recordTimerActivity(
+    input: Omit<TimerActivityUpdate, "changedAt" | "counterDate">,
+  ): void {
+    const changedAt = Date.now();
+    this.timerActivity[input.device.id] = updateTimerActivity(
+      this.timerActivity[input.device.id],
+      {
+        ...input,
+        changedAt,
+        counterDate: this.getActivityDateKey(changedAt),
+        message: input.message,
+      },
+    );
+    this.activityChanged();
+  }
+
+  private recordTimerActivityFromTimer(
+    timer: Timer,
+    event: TimerActivityEvent,
+    message?: string,
+  ): void {
+    this.recordTimerActivity({
+      device: timer.device,
+      event,
+      capability: timer.capability,
+      value: timer.value,
+      previousValue: timer.restoreState[timer.capability] ?? null,
+      duration: timer.timeOn,
+      offTime: timer.offTime,
+      message,
+    });
+  }
+
+  private activityChanged(): void {
+    this.scheduleSaveTimers();
+    this.emitTimerActivity();
+  }
+
+  private emitTimerActivity(): void {
+    this.homey.api.realtime("timer_activity", {
+      activity: this.exportTimerActivity(),
+    });
+  }
+
+  private getActivityDateKey(timestamp = Date.now()): string {
+    return getDateKey(timestamp, this.homey.clock.getTimezone());
+  }
+
+  private isTimerActivityEntry(deviceId: string, value: unknown): value is TimerActivityEntry {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    const entry = value as Partial<TimerActivityEntry>;
+    return Boolean(
+      entry.device
+      && entry.device.id === deviceId
+      && typeof entry.device.name === "string"
+      && isTimerActivityEvent(entry.event)
+      && typeof entry.changedAt === "number"
+      && Number.isFinite(entry.changedAt)
+      && typeof entry.counterDate === "string"
+      && /^\d{4}-\d{2}-\d{2}$/.test(entry.counterDate)
+      && typeof entry.invocations === "number"
+      && Number.isInteger(entry.invocations)
+      && entry.invocations >= 0,
+    );
+  }
+
+  private scheduleSaveTimers(): void {
+    if (this.saveTimersTimeout) {
+      clearTimeout(this.saveTimersTimeout);
+    }
+
+    this.saveTimersTimeout = setTimeout(() => {
+      this.saveTimersTimeout = null;
+      void this.saveTimers().catch((error) => {
+        this.error(`Unable to persist timers: ${this.formatError(error)}`);
+      });
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  private async flushSaveTimers(): Promise<void> {
+    if (this.saveTimersTimeout) {
+      clearTimeout(this.saveTimersTimeout);
+      this.saveTimersTimeout = null;
+    }
+    await this.saveTimers();
+  }
+
+  private async saveTimers(): Promise<void> {
+    const storedTimers: StoredTimer[] = Object.values(this.timers).map((timer) => ({
+      deviceId: timer.device.id,
+      deviceName: timer.device.name,
+      timeOn: timer.timeOn,
+      startTime: timer.startTime,
+      offTime: timer.offTime,
+      capability: timer.capability,
+      value: timer.value,
+      restoreState: timer.restoreState,
+    }));
+    await Promise.all([
+      this.homey.settings.set(TIMERS_SETTING_KEY, storedTimers),
+      this.homey.settings.set(TIMER_ACTIVITY_SETTING_KEY, this.timerActivity),
+    ]);
+  }
+
+  private getDurationSeconds(args: Record<string, unknown>): number {
+    const duration = typeof args.duration === "number"
+      ? args.duration / 1000
+      : args.time_on ?? args.time_off;
+    return typeof duration === "number" ? duration : Number.NaN;
+  }
+
+  private describeTimeoutValue(timer: Timer): string {
+    const entries = Object.entries(timer.restoreState);
+    if (entries.length === 0) {
+      return timer.capability === "dim" ? "dim=0, onoff=false" : `${timer.capability}=false`;
+    }
+    return entries.map(([capability, value]) => `${capability}=${value}`).join(", ");
+  }
+
+  private async triggerTimerFinished(device: DeviceReference): Promise<void> {
+    if (!this.timerFinishedTrigger) {
+      return;
+    }
+
+    try {
+      await this.timerFinishedTrigger.trigger({}, { deviceId: device.id });
+    } catch (error) {
+      this.error(`Failed to trigger timer_finished for ${device.name} [${device.id}]: ${this.formatError(error)}`);
+    }
+  }
+
+  private isTimelineDebugEnabled(): boolean {
+    return this.homey.settings.get(TIMELINE_DEBUG_SETTING_KEY) === true;
+  }
+
+  private async createTimelineDebugNotification(
+    key: string,
+    tags: Record<string, string | number | boolean>,
+  ): Promise<void> {
+    if (!this.isTimelineDebugEnabled()) {
+      return;
+    }
+
+    try {
+      await this.homey.notifications.createNotification({
+        excerpt: this.homey.__(
+          key,
+          Object.fromEntries(Object.entries(tags).map(([tagKey, tagValue]) => [
+            tagKey,
+            this.formatTimelineTagValue(tagValue),
+          ])),
+        ),
+      });
+    } catch (error) {
+      this.error(`Failed to create timeline debug notification for ${key}: ${this.formatError(error)}`);
+    }
+  }
+
+  private formatTimelineTagValue(value: string | number | boolean): string {
+    if (typeof value === "number") {
+      return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    }
+    return String(value);
+  }
+
+  private async enqueueDeviceOperation<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.deviceOperations.get(deviceId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    this.deviceOperations.set(deviceId, current);
+
+    try {
+      return await current;
+    } finally {
+      if (this.deviceOperations.get(deviceId) === current) {
+        this.deviceOperations.delete(deviceId);
+      }
+    }
+  }
+
+  private formatError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private isApiDevice(value: unknown): value is ApiDevice {
+    return Boolean(
+      value
+      && typeof value === "object"
+      && "id" in value
+      && typeof value.id === "string"
+      && "name" in value
+      && typeof value.name === "string",
+    );
+  }
+
+  private isCapabilityEvent(value: unknown): value is {
+    capabilityId: string;
+    value: CapabilityValue;
+  } {
+    return Boolean(
+      value
+      && typeof value === "object"
+      && "capabilityId" in value
+      && typeof value.capabilityId === "string"
+      && "value" in value
+      && this.isCapabilityValue(value.value),
+    );
+  }
+
+  private isCapabilityValue(value: unknown): value is CapabilityValue {
+    return value === null
+      || typeof value === "boolean"
+      || typeof value === "number"
+      || typeof value === "string";
+  }
+}
+
+export = TimerApp;

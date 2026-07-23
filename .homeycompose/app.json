@@ -1,0 +1,78 @@
+{
+  "id": "com.synplyworks.thenmore",
+  "version": "0.8.16",
+  "compatibility": ">=12.9.0",
+  "sdk": 3,
+  "brandColor": "#0000FF",
+  "name": {
+    "en": "Timer",
+    "nl": "Timer"
+  },
+  "description": {
+    "en": "Timer adds Timer functionality in the Then clause of your flows",
+    "nl": "Timer voegt Timer functionaliteit toe in de Dan functie van je flows"
+  },
+  "platforms": [
+    "local"
+  ],
+  "permissions": [
+    "homey:manager:api"
+  ],
+  "category": [
+    "tools"
+  ],
+  "tags": {
+    "en": [
+      "Timer",
+      "countdown"
+    ],
+    "nl": [
+      "Timer",
+      "zandloper"
+    ]
+  },
+  "author": {
+    "name": "Leon Ree",
+    "email": "leon@synplyworks.com"
+  },
+  "contributors": {
+    "developers": [
+      {
+        "name": "Leon van der Ree",
+        "email": "leon@synplyworks.com"
+      }
+    ]
+  },
+  "contributing": {
+    "donate": {
+      "paypal": {
+        "username": "lvanderree"
+      }
+    }
+  },
+  "bugs": {
+    "url": "https://github.com/lvanderree/com.synplyworks.thenmore/issues"
+  },
+  "images": {
+    "large": "/assets/images/large.png",
+    "small": "/assets/images/small.png"
+  },
+  "api": {
+    "getTimers": {
+      "method": "get",
+      "path": "/timers"
+    },
+    "deleteTimer": {
+      "method": "delete",
+      "path": "/timers/:id"
+    },
+    "getTimerActivity": {
+      "method": "get",
+      "path": "/timer-activity"
+    },
+    "clearTimerActivity": {
+      "method": "delete",
+      "path": "/timer-activity"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "is_timer_running",
+  "title": {
+    "en": "Timer !{{is|isn't}} running",
+    "nl": "Timer loopt !{{|niet}}"
+  },
+  "titleFormatted": {
+    "en": "Timer for [[device]] !{{is|isn't}} running",
+    "nl": "Timer voor [[device]] loopt !{{|niet}}"
+  },
+  "args": [
+    {
+      "name": "device",
+      "type": "autocomplete",
+      "placeholder": {
+        "en": "The device for which a timer can run",
+        "nl": "Het apparaat waarvoor een timer kan lopen"
+      }
+    }
+  ]
+}

@@ -1,1 +1,65 @@
-{}
+{
+  "settings": {
+    "title": "Timerbeheer",
+    "subtitle": "Bekijk huidige en recente timeractiviteit en configureer diagnostische logboekregistratie.",
+    "debug_title": "Timeline debug",
+    "debug_label": "Schrijf timergebeurtenissen naar de Homey-tijdlijn",
+    "debug_hint": "Handig voor troubleshooting van timeracties, maar dit kan veel tijdlijnitems opleveren.",
+    "save": "Instellingen opslaan",
+    "saved": "Instellingen opgeslagen.",
+    "activity_title": "Timeractiviteit",
+    "activity_hint": "De laatste timergebeurtenis per apparaat blijft 30 dagen bewaard. Aanroepen telt timeractieverzoeken voor de huidige Homey-dag.",
+    "no_activity": "Er is nog geen timeractiviteit.",
+    "clear_activity": "Activiteit wissen",
+    "clear_activity_confirm": "Gestopte timeractiviteit wissen? Lopende timers blijven zichtbaar.",
+    "status": "Status",
+    "remaining_or_changed": "Resterend / laatste wijziging",
+    "invocations_today": "Aanroepen vandaag",
+    "action": "Actie",
+    "show_details": "Details tonen",
+    "details_title": "Timerdetails",
+    "close": "Sluiten",
+    "cancel_timer": "Timer annuleren",
+    "device_id": "Apparaat-ID",
+    "device_name": "Apparaatnaam",
+    "capability": "Aangestuurde capability",
+    "current_value": "Timerwaarde",
+    "previous_value": "Vorige waarde",
+    "last_change": "Laatste wijziging",
+    "requested_duration": "Gevraagde duur",
+    "diagnostic_message": "Diagnostisch bericht",
+    "retrying": "Timeoutactie wordt opnieuw geprobeerd",
+    "seconds_remaining": "__seconds__s",
+    "activity_status": {
+      "requested": "Aangevraagd",
+      "started": "Actief",
+      "replaced": "Actief (vervangen)",
+      "restored": "Actief (hersteld)",
+      "completed": "Voltooid",
+      "cancelled_flow": "Geannuleerd door Flow",
+      "cancelled_settings": "Geannuleerd in instellingen",
+      "cancelled_manual": "Geannuleerd door apparaatwijziging",
+      "cancelled_missing": "Gestopt: capability niet beschikbaar",
+      "skipped": "Overgeslagen",
+      "failed": "Mislukt / opnieuw proberen"
+    }
+  },
+  "errors": {
+    "invalid_device": "Er is geen geldig apparaat geselecteerd.",
+    "invalid_duration": "De timerduur moet een positief en eindig getal zijn.",
+    "invalid_capability_value": "De gevraagde capabilitywaarde is ongeldig.",
+    "unsupported_capability": "__device__ ondersteunt de instelbare capability __capability__ niet.",
+    "capability_update_failed": "Kon __capability__ voor __device__ niet instellen: __error__",
+    "device_load_failed": "Kon apparaat __device__ niet laden: __error__"
+  },
+  "timeline": {
+    "started": "**Timer** gestart voor **__device__** voor **__seconds__s** (__capability__ = __value__).",
+    "replaced": "**Timer** vervangen voor **__device__** met **__seconds__s** (__capability__ = __value__).",
+    "cancelled": "**Timer** geannuleerd voor **__device__**.",
+    "expired": "**Timer** verlopen voor **__device__** en **__capability__** ingesteld op **__value__**.",
+    "restored": "**Timer** hersteld voor **__device__** met nog **__seconds__s** resterend.",
+    "offline_expired": "**Timer** voor **__device__** is verlopen terwijl Homey offline was (__capability__).",
+    "skipped": "**Timer** overgeslagen voor **__device__** omdat de huidige timer of apparaatstatus voorrang heeft (**__seconds__s** gevraagd).",
+    "failed": "**Timer** voor **__device__** kon niet worden afgerond en probeert het opnieuw: __error__"
+  }
+}

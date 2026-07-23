@@ -21,7 +21,3 @@ For more info, see: https://community.athom.com/t/timer-v0-4-3-stable-homey-v1-5
 
 ## Todo
 * Find a way to handle motion started/ended triggers better, since with continuous motion, the timer will end sooner than (maybe even before) the last motion.
-
-
-## Final note
-The repository can be found at: https://github.com/lvanderree/com.synplyworks.thenmore

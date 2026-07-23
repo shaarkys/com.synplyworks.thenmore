@@ -1,1 +1,65 @@
-{}
+{
+  "settings": {
+    "title": "Timer management",
+    "subtitle": "View current and recent timer activity and configure diagnostic logging.",
+    "debug_title": "Timeline debug",
+    "debug_label": "Write timer lifecycle events to the Homey timeline",
+    "debug_hint": "Useful for troubleshooting which timer actions ran, but it can create a lot of timeline entries.",
+    "save": "Save settings",
+    "saved": "Settings saved.",
+    "activity_title": "Timer activity",
+    "activity_hint": "The latest timer event per device is kept for 30 days. Invocations count timer action requests for the current Homey day.",
+    "no_activity": "There is no timer activity yet.",
+    "clear_activity": "Clear activity",
+    "clear_activity_confirm": "Clear stopped timer activity? Running timers will remain visible.",
+    "status": "Status",
+    "remaining_or_changed": "Remaining / last change",
+    "invocations_today": "Invocations today",
+    "action": "Action",
+    "show_details": "Show details",
+    "details_title": "Timer details",
+    "close": "Close",
+    "cancel_timer": "Cancel timer",
+    "device_id": "Device ID",
+    "device_name": "Device name",
+    "capability": "Controlled capability",
+    "current_value": "Timed value",
+    "previous_value": "Previous value",
+    "last_change": "Last change",
+    "requested_duration": "Requested duration",
+    "diagnostic_message": "Diagnostic message",
+    "retrying": "Retrying timeout action",
+    "seconds_remaining": "__seconds__s",
+    "activity_status": {
+      "requested": "Requested",
+      "started": "Running",
+      "replaced": "Running (replaced)",
+      "restored": "Running (restored)",
+      "completed": "Completed",
+      "cancelled_flow": "Cancelled by Flow",
+      "cancelled_settings": "Cancelled in settings",
+      "cancelled_manual": "Cancelled by device change",
+      "cancelled_missing": "Stopped: capability unavailable",
+      "skipped": "Skipped",
+      "failed": "Failed / retrying"
+    }
+  },
+  "errors": {
+    "invalid_device": "No valid device was selected.",
+    "invalid_duration": "The timer duration must be a positive, finite number.",
+    "invalid_capability_value": "The requested capability value is invalid.",
+    "unsupported_capability": "__device__ does not support the settable capability __capability__.",
+    "capability_update_failed": "Could not set __capability__ for __device__: __error__",
+    "device_load_failed": "Could not load device __device__: __error__"
+  },
+  "timeline": {
+    "started": "**Timer** started for **__device__** for **__seconds__s** (__capability__ = __value__).",
+    "replaced": "**Timer** replaced for **__device__** with **__seconds__s** (__capability__ = __value__).",
+    "cancelled": "**Timer** cancelled for **__device__**.",
+    "expired": "**Timer** expired for **__device__** and set **__capability__** to **__value__**.",
+    "restored": "**Timer** restored for **__device__** with **__seconds__s** remaining.",
+    "offline_expired": "**Timer** for **__device__** expired while Homey was offline (__capability__).",
+    "skipped": "**Timer** skipped for **__device__** because the current timer or device state takes precedence (**__seconds__s** requested).",
+    "failed": "**Timer** for **__device__** could not finish and will retry: __error__"
+  }
+}

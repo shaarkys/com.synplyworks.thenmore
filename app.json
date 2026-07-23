@@ -1,7 +1,8 @@
 {
+  "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.synplyworks.thenmore",
-  "version": "0.8.10",
-  "compatibility": ">=5.0.0",
+  "version": "0.8.16",
+  "compatibility": ">=12.9.0",
   "sdk": 3,
   "brandColor": "#0000FF",
   "name": {
@@ -57,91 +58,106 @@
     "large": "/assets/images/large.png",
     "small": "/assets/images/small.png"
   },
+  "api": {
+    "getTimers": {
+      "method": "get",
+      "path": "/timers"
+    },
+    "deleteTimer": {
+      "method": "delete",
+      "path": "/timers/:id"
+    },
+    "getTimerActivity": {
+      "method": "get",
+      "path": "/timer-activity"
+    },
+    "clearTimerActivity": {
+      "method": "delete",
+      "path": "/timer-activity"
+    }
+  },
   "flow": {
-    "actions": [
+    "triggers": [
       {
-        "id": "then_more_on_off",
+        "id": "timer_finished",
         "title": {
-          "en": "Timer on/off",
-          "nl": "Timer aan/uit"
+          "en": "Timer finished",
+          "nl": "Timer afgelopen"
         },
         "titleFormatted": {
-          "en": "Timer for [[device]] on [[time_on]] seconds, [[ignore_when_on]], [[overrule_longer_timeouts]]",
-          "nl": "Timer voor [[device]] op [[time_on]] seconden, [[ignore_when_on]], [[overrule_longer_timeouts]]"
-        },
-        "hint": {
-          "en": "With this action you can keep your device enabled for some time",
-          "nl": "Met deze actie kan je je apparaat een tijd ingeschakeld houden"
+          "en": "Timer for [[device]] finished",
+          "nl": "Timer voor [[device]] is afgelopen"
         },
         "args": [
           {
-            "type": "autocomplete",
             "name": "device",
+            "type": "autocomplete",
             "placeholder": {
-              "en": "Which on/off capable device",
-              "nl": "Welk apparaat dat aan/uit te zetten is"
+              "en": "The device for which the timer finished",
+              "nl": "Het apparaat waarvoor de timer is afgelopen"
             }
-          },
+          }
+        ]
+      }
+    ],
+    "conditions": [
+      {
+        "id": "is_timer_running",
+        "title": {
+          "en": "Timer !{{is|isn't}} running",
+          "nl": "Timer loopt !{{|niet}}"
+        },
+        "titleFormatted": {
+          "en": "Timer for [[device]] !{{is|isn't}} running",
+          "nl": "Timer voor [[device]] loopt !{{|niet}}"
+        },
+        "args": [
           {
-            "name": "time_on",
-            "type": "number",
-            "min": 1,
+            "name": "device",
+            "type": "autocomplete",
             "placeholder": {
-              "en": "Time (in s) to keep the device on",
-              "nl": "Tijd (in s) om het apparaat aan te houden"
+              "en": "The device for which a timer can run",
+              "nl": "Het apparaat waarvoor een timer kan lopen"
             }
-          },
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "cancel_timer",
+        "title": {
+          "en": "Cancel timer",
+          "nl": "Annuleer timer"
+        },
+        "titleFormatted": {
+          "en": "Cancel timer for [[device]]",
+          "nl": "Annuleer timer voor [[device]]"
+        },
+        "hint": {
+          "en": "Cancel a running timer, preventing the device from turning off",
+          "nl": "Stop een lopende timer, waardoor het apparaat niet uit zal schakelen"
+        },
+        "args": [
           {
-            "name": "ignore_when_on",
-            "type": "dropdown",
-            "values": [
-              {
-                "id": "yes",
-                "label": {
-                  "en": "Don't start timer, when the device is already on",
-                  "nl": "Start geen timer, als het apparaat al aan staat"
-                }
-              },
-              {
-                "id": "no",
-                "label": {
-                  "en": "Start timer, even when the device is already on",
-                  "nl": "Start de timer, zelfs als het apparaat al aan staat"
-                }
-              }
-            ]
-          },
-          {
-            "name": "overrule_longer_timeouts",
-            "type": "dropdown",
-            "values": [
-              {
-                "id": "no",
-                "label": {
-                  "en": "Use longest timeouts",
-                  "nl": "Langste timeouts gebruiken"
-                }
-              },
-              {
-                "id": "yes",
-                "label": {
-                  "en": "Shortest timeouts wins",
-                  "nl": "Kortste timeouts worden toegepast"
-                }
-              }
-            ]
+            "name": "device",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "The device for which the timer runs",
+              "nl": "Het apparaat waarvoor de timer loopt"
+            }
           }
         ]
       },
       {
         "id": "then_more_dim",
         "title": {
-          "en": "Timer dim",
-          "nl": "Timer dim"
+          "en": "Dim for a while",
+          "nl": "Dim for a while"
         },
         "titleFormatted": {
-          "en": "Dim-Timer for [[device]] with brightness [[brightness_level]] for [[time_on]] seconds, [[ignore_when_on]], [[overrule_longer_timeouts]], restore: [[restore]]",
-          "nl": "Dim-Timer voor [[device]] met brightness [[brightness_level]] voor [[time_on]] seconden, [[ignore_when_on]], [[overrule_longer_timeouts]], herstel: [[restore]]"
+          "en": "Set [[device]] to [[brightness_level]] for [[time_on]]s (ignore if on: [[ignore_when_on]], override: [[overrule_longer_timeouts]], restore: [[restore]])",
+          "nl": "Zet [[device]] op [[brightness_level]] voor [[time_on]]s (negeer indien aan: [[ignore_when_on]], overschrijf: [[overrule_longer_timeouts]], herstel: [[restore]])"
         },
         "hint": {
           "en": "With this action you can keep your dimable device enabled for some time",
@@ -237,63 +253,153 @@
         ]
       },
       {
-        "id": "cancel_timer",
+        "id": "then_more_off_on",
         "title": {
-          "en": "Cancel timer",
-          "nl": "Annuleer timer"
+          "en": "Timer off/on",
+          "nl": "Timer uit/aan"
         },
         "titleFormatted": {
-          "en": "Cancel timer for [[device]]",
-          "nl": "Annuleer timer voor [[device]]"
+          "en": "Timer for [[device]] off [[time_off]] seconds, [[ignore_when_off]], [[overrule_longer_timeouts]]",
+          "nl": "Timer voor [[device]] uit [[time_off]] seconden, [[ignore_when_off]], [[overrule_longer_timeouts]]"
         },
         "hint": {
-          "en": "Cancel a running timer, preventing the device from turning off",
-          "nl": "Stop een lopende timer, waardoor het apparaat niet uit zal schakelen"
+          "en": "With this action you can keep your device disabled for some time and then restore the previous on/off state",
+          "nl": "Met deze actie kan je je apparaat tijdelijk uitschakelen en daarna de vorige aan/uit-status herstellen"
         },
         "args": [
           {
-            "name": "device",
             "type": "autocomplete",
+            "name": "device",
             "placeholder": {
-              "en": "The device for which the timer runs",
-              "nl": "Het apparaat waarvoor de timer loopt"
+              "en": "Which on/off capable device",
+              "nl": "Welk apparaat dat aan/uit te zetten is"
             }
+          },
+          {
+            "name": "time_off",
+            "type": "number",
+            "min": 1,
+            "placeholder": {
+              "en": "Time (in s) to keep the device off",
+              "nl": "Tijd (in s) om het apparaat uit te houden"
+            }
+          },
+          {
+            "name": "ignore_when_off",
+            "type": "dropdown",
+            "values": [
+              {
+                "id": "yes",
+                "label": {
+                  "en": "Don't start timer, when the device is already off",
+                  "nl": "Start geen timer, als het apparaat al uit staat"
+                }
+              },
+              {
+                "id": "no",
+                "label": {
+                  "en": "Start timer, even when the device is already off",
+                  "nl": "Start de timer, zelfs als het apparaat al uit staat"
+                }
+              }
+            ]
+          },
+          {
+            "name": "overrule_longer_timeouts",
+            "type": "dropdown",
+            "values": [
+              {
+                "id": "no",
+                "label": {
+                  "en": "Use longest timeouts",
+                  "nl": "Langste timeouts gebruiken"
+                }
+              },
+              {
+                "id": "yes",
+                "label": {
+                  "en": "Shortest timeouts wins",
+                  "nl": "Kortste timeouts worden toegepast"
+                }
+              }
+            ]
           }
         ]
-      }
-    ],
-    "conditions": [
+      },
       {
-        "id": "is_timer_running",
+        "id": "then_more_on_off",
         "title": {
-          "en": "Timer !{{is|isn't}} running",
-          "nl": "Timer loopt !{{|niet}}"
+          "en": "Timer on/off",
+          "nl": "Timer aan/uit"
         },
         "titleFormatted": {
-          "en": "Timer for [[device]] !{{is|isn't}} running",
-          "nl": "Timer voor [[device]] loopt !{{|niet}}"
+          "en": "Timer for [[device]] on [[time_on]] seconds, [[ignore_when_on]], [[overrule_longer_timeouts]]",
+          "nl": "Timer voor [[device]] op [[time_on]] seconden, [[ignore_when_on]], [[overrule_longer_timeouts]]"
+        },
+        "hint": {
+          "en": "With this action you can keep your device enabled for some time",
+          "nl": "Met deze actie kan je je apparaat een tijd ingeschakeld houden"
         },
         "args": [
           {
-            "name": "device",
             "type": "autocomplete",
+            "name": "device",
             "placeholder": {
-              "en": "The device for which a timer can run",
-              "nl": "Het apparaat waarvoor een timer kan lopen"
+              "en": "Which on/off capable device",
+              "nl": "Welk apparaat dat aan/uit te zetten is"
             }
+          },
+          {
+            "name": "time_on",
+            "type": "number",
+            "min": 1,
+            "placeholder": {
+              "en": "Time (in s) to keep the device on",
+              "nl": "Tijd (in s) om het apparaat aan te houden"
+            }
+          },
+          {
+            "name": "ignore_when_on",
+            "type": "dropdown",
+            "values": [
+              {
+                "id": "yes",
+                "label": {
+                  "en": "Don't start timer, when the device is already on",
+                  "nl": "Start geen timer, als het apparaat al aan staat"
+                }
+              },
+              {
+                "id": "no",
+                "label": {
+                  "en": "Start timer, even when the device is already on",
+                  "nl": "Start de timer, zelfs als het apparaat al aan staat"
+                }
+              }
+            ]
+          },
+          {
+            "name": "overrule_longer_timeouts",
+            "type": "dropdown",
+            "values": [
+              {
+                "id": "no",
+                "label": {
+                  "en": "Use longest timeouts",
+                  "nl": "Langste timeouts gebruiken"
+                }
+              },
+              {
+                "id": "yes",
+                "label": {
+                  "en": "Shortest timeouts wins",
+                  "nl": "Kortste timeouts worden toegepast"
+                }
+              }
+            ]
           }
         ]
       }
     ]
-  },
-  "api": {
-    "getTimers": {
-      "method": "get",
-      "path": "/timers"
-    },
-    "deleteTimer": {
-      "method": "delete",
-      "path": "/timers/:id"
-    }
   }
 }

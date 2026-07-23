@@ -1,0 +1,103 @@
+{
+    "id": "then_more_dim",
+    "title": {
+      "en": "Dim for a while",
+      "nl": "Dim for a while"
+    },
+    "titleFormatted": {
+      "en": "Set [[device]] to [[brightness_level]] for [[time_on]]s (ignore if on: [[ignore_when_on]], override: [[overrule_longer_timeouts]], restore: [[restore]])",
+      "nl": "Zet [[device]] op [[brightness_level]] voor [[time_on]]s (negeer indien aan: [[ignore_when_on]], overschrijf: [[overrule_longer_timeouts]], herstel: [[restore]])"
+    },
+    "hint": {
+      "en": "With this action you can keep your dimable device enabled for some time",
+      "nl": "Met deze actie kan je je dimbare apparaat een tijd ingeschakeld houden"
+    },
+    "args": [
+      {
+        "name": "device",
+        "type": "autocomplete",
+        "placeholder": {
+          "en": "Which dimable device",
+          "nl": "Welk apparaat dat dimbaar is"
+        }
+      },
+      {
+        "name": "brightness_level",
+        "type": "range",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
+        "label": "%",
+        "labelMultiplier": 100
+      },
+      {
+        "name": "time_on",
+        "type": "number",
+        "min": 1,
+        "placeholder": {
+          "en": "Time (in s) to keep the device on",
+          "nl": "Tijd (in s) om het apparaat aan te houden"
+        }
+      },
+      {
+        "name": "ignore_when_on",
+        "type": "dropdown",
+        "values": [
+          {
+            "id": "yes",
+            "label": {
+              "en": "Ignore when device is already on",
+              "nl": "Negeer als het apparaat al aan staat"
+            }
+          },
+          {
+            "id": "no",
+            "label": {
+              "en": "Control it anyway",
+              "nl": "Beheers het toch"
+            }
+          }
+        ]
+      },
+      {
+        "name": "overrule_longer_timeouts",
+        "type": "dropdown",
+        "values": [
+          {
+            "id": "no",
+            "label": {
+              "en": "Keep running timer, if its longer than this time",
+              "nl": "Behoud lopende timers, wanneer deze nog langer duren dan deze tijd"
+            }
+          },
+          {
+            "id": "yes",
+            "label": {
+              "en": "Set this timer, even if its shorter than time remaining when there is a running timer",
+              "nl": "Zet deze timer, zelfs als deze timer korter is dan een lopende timer"
+            }
+          }
+        ]
+      },
+      {
+        "name": "restore",
+        "type": "dropdown",
+        "values": [
+          {
+            "id": "yes",
+            "label": {
+              "en": "Restore to previous state (if controlling anyway)",
+              "nl": "Herstel naar vorige staat (indien toch beheerst)"
+            }
+          },
+          {
+            "id": "no",
+            "label": {
+              "en": "Turn off after timeout (if controlling anyway)",
+              "nl": "Zet apparaat uit na timeout (indien toch beheerst)"
+            }
+          }
+        ]
+      }
+    ]
+  }
