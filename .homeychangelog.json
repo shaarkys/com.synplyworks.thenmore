@@ -69,5 +69,8 @@
   "0.8.16": {
     "en": "Added restart-safe timer activity history with the latest event per device, daily invocation counters, diagnostics and cleanup; improved settings with responsive activity cards and modal timer details.",
     "nl": "Herstart-bestendige timer activiteit toegevoegd met de laatste gebeurtenis per apparaat, dagelijkse aanroep-tellers, diagnostiek en opschoning; verbeterde instellingen met responsieve activiteitskaarten en timer-details in een dialoogvenster."
+  },
+  "0.8.17": {
+    "en": "fixed review comments"
   }
 }
