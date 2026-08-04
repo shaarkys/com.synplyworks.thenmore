@@ -1,6 +1,6 @@
 {
   "id": "com.synplyworks.thenmore",
-  "version": "0.8.16",
+  "version": "0.8.17",
   "compatibility": ">=12.9.0",
   "sdk": 3,
   "brandColor": "#0000FF",
@@ -9,9 +9,10 @@
     "nl": "Timer"
   },
   "description": {
-    "en": "Timer adds Timer functionality in the Then clause of your flows",
-    "nl": "Timer voegt Timer functionaliteit toe in de Dan functie van je flows"
+    "en": "Implement smart timer functionality to control your devices",
+    "nl": "Voeg slimme timer functionaliteit toe om je apparaten aan te sturen"
   },
+  "homeyCommunityTopicId": 3722,
   "platforms": [
     "local"
   ],
@@ -38,8 +39,10 @@
   "contributors": {
     "developers": [
       {
-        "name": "Leon van der Ree",
-        "email": "leon@synplyworks.com"
+        "name": "Leon van der Ree"
+      },
+      {
+        "name": "Břetislav Kubesa"
       }
     ]
   },
@@ -50,6 +53,7 @@
       }
     }
   },
+  "source": "https://github.com/lvanderree/com.synplyworks.thenmore",
   "bugs": {
     "url": "https://github.com/lvanderree/com.synplyworks.thenmore/issues"
   },

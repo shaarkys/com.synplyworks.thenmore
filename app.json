@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "com.synplyworks.thenmore",
-  "version": "0.8.16",
+  "version": "0.8.17",
   "compatibility": ">=12.9.0",
   "sdk": 3,
   "brandColor": "#0000FF",
@@ -10,9 +10,10 @@
     "nl": "Timer"
   },
   "description": {
-    "en": "Timer adds Timer functionality in the Then clause of your flows",
-    "nl": "Timer voegt Timer functionaliteit toe in de Dan functie van je flows"
+    "en": "Implement smart timer functionality to control your devices",
+    "nl": "Voeg slimme timer functionaliteit toe om je apparaten aan te sturen"
   },
+  "homeyCommunityTopicId": 3722,
   "platforms": [
     "local"
   ],
@@ -39,8 +40,10 @@
   "contributors": {
     "developers": [
       {
-        "name": "Leon van der Ree",
-        "email": "leon@synplyworks.com"
+        "name": "Leon van der Ree"
+      },
+      {
+        "name": "Břetislav Kubesa"
       }
     ]
   },
@@ -51,6 +54,7 @@
       }
     }
   },
+  "source": "https://github.com/lvanderree/com.synplyworks.thenmore",
   "bugs": {
     "url": "https://github.com/lvanderree/com.synplyworks.thenmore/issues"
   },
@@ -160,7 +164,7 @@
           "nl": "Zet [[device]] op [[brightness_level]] voor [[time_on]]s (negeer indien aan: [[ignore_when_on]], overschrijf: [[overrule_longer_timeouts]], herstel: [[restore]])"
         },
         "hint": {
-          "en": "With this action you can keep your dimable device enabled for some time",
+          "en": "With this action you can keep your dimmable device enabled for some time",
           "nl": "Met deze actie kan je je dimbare apparaat een tijd ingeschakeld houden"
         },
         "args": [
@@ -168,7 +172,7 @@
             "name": "device",
             "type": "autocomplete",
             "placeholder": {
-              "en": "Which dimable device",
+              "en": "Which dimmable device",
               "nl": "Welk apparaat dat dimbaar is"
             }
           },
@@ -217,14 +221,14 @@
               {
                 "id": "no",
                 "label": {
-                  "en": "Keep running timer, if its longer than this time",
+                  "en": "Keep running timer, if it's longer than this time",
                   "nl": "Behoud lopende timers, wanneer deze nog langer duren dan deze tijd"
                 }
               },
               {
                 "id": "yes",
                 "label": {
-                  "en": "Set this timer, even if its shorter than time remaining when there is a running timer",
+                  "en": "Set this timer, even if it's shorter than time remaining when there is a running timer",
                   "nl": "Zet deze timer, zelfs als deze timer korter is dan een lopende timer"
                 }
               }

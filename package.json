@@ -3,18 +3,24 @@
   "version": "0.8.16",
   "description": "Homey Timer addon",
   "main": "app.ts",
-  "dependencies": {},
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@tsconfig/node22": "22.0.5",
+    "@tsconfig/node22": "^22.0.5",
     "@types/homey": "npm:homey-apps-sdk-v3-types@0.3.12",
     "@types/node": "22.20.1",
     "@typescript-eslint/eslint-plugin": "8.65.0",
     "@typescript-eslint/parser": "8.65.0",
     "eslint": "10.7.0",
     "globals": "17.7.0",
-    "homey": "4.3.0",
-    "typescript": "6.0.3"
+    "homey": "^4.3.0",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "got": "^11.8.5",
+    "parseuri": "^3.0.0",
+    "sharp": "^0.35.0",
+    "tmp": "^0.2.6",
+    "uuid": "^11.1.1"
   },
   "scripts": {
     "build": "tsc",
