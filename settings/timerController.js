@@ -20,6 +20,12 @@ function translatePage() {
     'activity-title': 'settings.activity_title',
     'activity-hint': 'settings.activity_hint',
     'activity-empty': 'settings.no_activity',
+    'activity-search-label': 'settings.activity_search_label',
+    'activity-status-filter-label': 'settings.activity_status_filter_label',
+    'activity-status-all': 'settings.activity_status_all',
+    'activity-status-running': 'settings.activity_status_running',
+    'activity-status-stopped': 'settings.activity_status_stopped',
+    'activity-no-results': 'settings.no_activity_matches',
     'clear-activity': 'settings.clear_activity',
     'activity-device-heading': 'settings.device_name',
     'activity-status-heading': 'settings.status',
@@ -43,6 +49,7 @@ function translatePage() {
   Object.entries(translations).forEach(([elementId, translationKey]) => {
     byId(elementId).textContent = homeyClient.__(translationKey);
   });
+  byId('activity-search').placeholder = homeyClient.__('settings.activity_search_placeholder');
 }
 
 function remainingInSeconds(offTime) {
@@ -92,6 +99,22 @@ function getActivityRows() {
       return left.timer.offTime - right.timer.offTime;
     }
     return (right.changedAt || 0) - (left.changedAt || 0);
+  });
+}
+
+function filterActivityRows(rows) {
+  const query = String(byId('activity-search').value || '').trim().toLowerCase();
+  const status = byId('activity-status-filter').value || 'all';
+
+  return rows.filter((row) => {
+    const deviceName = row.device?.name == null ? '' : String(row.device.name);
+    const deviceId = row.device?.id == null ? row.deviceId : String(row.device.id);
+    const matchesSearch = !query || [deviceName, deviceId, row.deviceId]
+      .some(value => String(value).toLowerCase().includes(query));
+    const matchesStatus = status === 'running' ? Boolean(row.timer)
+      : status === 'stopped' ? !row.timer
+        : true;
+    return matchesSearch && matchesStatus;
   });
 }
 
@@ -146,6 +169,7 @@ function clearActivity() {
 
 function renderActivity() {
   const rows = getActivityRows();
+  const visibleRows = filterActivityRows(rows);
   const body = byId('activity-body');
   const labels = {
     name: homeyClient.__('settings.device_name'),
@@ -156,7 +180,7 @@ function renderActivity() {
   };
   body.replaceChildren();
 
-  for (const rowData of rows) {
+  for (const rowData of visibleRows) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     const statusCell = document.createElement('td');
@@ -195,8 +219,9 @@ function renderActivity() {
     body.append(row);
   }
 
-  byId('activity-table').classList.toggle('is-hidden', rows.length === 0);
+  byId('activity-table').classList.toggle('is-hidden', visibleRows.length === 0);
   byId('activity-empty').classList.toggle('is-hidden', rows.length > 0);
+  byId('activity-no-results').classList.toggle('is-hidden', rows.length === 0 || visibleRows.length > 0);
   byId('clear-activity').disabled = Object.keys(timerActivity).every(deviceId => timers[deviceId]);
 }
 
@@ -259,6 +284,10 @@ function onHomeyReady(Homey) {
   homeyClient.ready();
   try {
     translatePage();
+    byId('activity-search').value = '';
+    byId('activity-status-filter').value = 'all';
+    byId('activity-search').addEventListener('input', renderActivity);
+    byId('activity-status-filter').addEventListener('change', renderActivity);
     byId('save-settings').addEventListener('click', saveSettings);
     byId('clear-activity').addEventListener('click', clearActivity);
     byId('close-details').addEventListener('click', hideDetails);

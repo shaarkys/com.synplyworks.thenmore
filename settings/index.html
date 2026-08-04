@@ -48,6 +48,18 @@
         margin-bottom: 0;
       }
 
+      .timer-filters {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(10rem, 1fr);
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .timer-filter-group {
+        min-width: 0;
+        margin-bottom: 0;
+      }
+
       .timer-status {
         font-weight: 600;
       }
@@ -112,6 +124,11 @@
       }
 
       @media (max-width: 520px) {
+        .timer-filters {
+          grid-template-columns: 1fr;
+          gap: 0.5rem;
+        }
+
         .timer-table-wrapper {
           overflow: visible;
         }
@@ -197,7 +214,22 @@
         <button type="button" id="clear-activity" class="homey-button-secondary-shadow"></button>
       </div>
       <p class="homey-form-hint" id="activity-hint"></p>
+      <div class="timer-filters" id="activity-filters">
+        <div class="timer-filter-group">
+          <label class="homey-form-label" id="activity-search-label" for="activity-search"></label>
+          <input class="homey-form-input" id="activity-search" type="search" autocomplete="off" aria-labelledby="activity-search-label">
+        </div>
+        <div class="timer-filter-group">
+          <label class="homey-form-label" id="activity-status-filter-label" for="activity-status-filter"></label>
+          <select class="homey-form-select" id="activity-status-filter" aria-labelledby="activity-status-filter-label">
+            <option id="activity-status-all" value="all"></option>
+            <option id="activity-status-running" value="running"></option>
+            <option id="activity-status-stopped" value="stopped"></option>
+          </select>
+        </div>
+      </div>
       <p id="activity-empty"></p>
+      <p id="activity-no-results" class="is-hidden"></p>
       <div class="timer-table-wrapper">
         <table class="timer-table" id="activity-table">
           <thead>
